@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BLE Live Plotter</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card: #121a2a;
+      --text: #e7eefc;
+      --muted: #a9b6d3;
+      --accent: #67b7ff;
+      --danger: #ff6b6b;
+    }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 14px 16px; background: rgba(255,255,255,0.03); border-bottom: 1px solid rgba(255,255,255,0.06); }
+    header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+    header p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+    main { padding: 16px; display: grid; gap: 12px; max-width: 980px; margin: 0 auto; }
+    .row { display: grid; gap: 10px; grid-template-columns: 1fr; }
+    .card { background: var(--card); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    button { appearance: none; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06); color: var(--text);
+      padding: 10px 12px; border-radius: 12px; font-weight: 650; cursor: pointer; }
+    button.primary { border-color: rgba(103,183,255,0.6); background: rgba(103,183,255,0.15); }
+    button.danger { border-color: rgba(255,107,107,0.55); background: rgba(255,107,107,0.12); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .kpi { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .kpi .item { padding: 10px; border-radius: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); }
+    .kpi .label { font-size: 11px; color: var(--muted); }
+    .kpi .value { font-size: 16px; font-weight: 750; margin-top: 4px; }
+    canvas { width: 100%; height: 320px; background: rgba(0,0,0,0.25); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); touch-action: pan-y; }
+    .small { font-size: 12px; color: var(--muted); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #666; }
+    .dot.ok { background: #36d399; }
+    .dot.bad { background: var(--danger); }
+    .grid2 { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 860px) { .grid2 { grid-template-columns: 1.2fr 0.8fr; } }
+    input[type="number"] { width: 110px; padding: 9px 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); color: var(--text); }
+    a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>BLE Live Plotter (ANNA-B112)</h1>
+    <p>Connect via <span class="mono">Web Bluetooth</span> and plot your notifications in real time.</p>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="controls">
+        <button id="btnConnect" class="primary">Connect</button>
+        <button id="btnDisconnect" class="danger" disabled>Disconnect</button>
+        <span class="pill"><span id="statusDot" class="dot"></span><span id="statusText" class="small">Disconnected</span></span>
+        <span class="pill"><span class="small">Device:</span><span id="deviceName" class="mono small">—</span></span>
+      </div>
+      <div class="small" style="margin-top:10px; line-height:1.45;">
+        Uses UUIDs from your firmware:<br/>
+        <span class="mono">Service:</span> <span class="mono" id="svcUuid">cddf1000-30f7-4671-8b43-5e40ba53514a</span><br/>
+        <span class="mono">Notify Char:</span> <span class="mono" id="charUuid">cddf1002-30f7-4671-8b43-5e40ba53514a</span><br/>
+        Packet format: <span class="mono">float32 timestamp</span> + <span class="mono">float32 voltage</span> (8 bytes, little-endian).
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <canvas id="plot" width="1200" height="420"></canvas>
+        <div class="controls" style="margin-top:10px; justify-content: space-between;">
+          <div class="controls">
+            <span class="small">Window (s):</span>
+            <input id="winSeconds" type="number" min="1" max="120" step="1" value="10" />
+            <span class="small">Auto-scale:</span>
+            <input id="autoScale" type="checkbox" checked />
+          </div>
+          <div class="controls">
+            <button id="btnClear">Clear</button>
+          </div>
+        </div>
+        <div class="small" style="margin-top:10px;">Tip: This is a lightweight scope-style plot. For FFT/filters, stream to your PC later.</div>
+      </div>
+
+      <div class="card">
+        <div class="kpi">
+          <div class="item">
+            <div class="label">Notifications / s (approx)</div>
+            <div class="value" id="kpiRate">—</div>
+          </div>
+          <div class="item">
+            <div class="label">Latest voltage</div>
+            <div class="value" id="kpiV">—</div>
+          </div>
+          <div class="item">
+            <div class="label">Latest timestamp</div>
+            <div class="value" id="kpiT">—</div>
+          </div>
+          <div class="item">
+            <div class="label">Last packet (hex)</div>
+            <div class="value mono" id="kpiHex" style="font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">—</div>
+          </div>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 14px 0;" />
+
+        <div class="small" style="line-height:1.55;">
+          <div style="font-weight:700; margin-bottom:6px;">Phone requirements</div>
+          • Android: Chrome (or Edge) works. Must be served from <span class="mono">https://</span> or <span class="mono">http://localhost</span>.<br/>
+          • iPhone/iOS Safari: no Web Bluetooth (use a native app or another bridge).<br/>
+          <br/>
+          <div style="font-weight:700; margin-bottom:6px;">How to run</div>
+          Option A (fast): save this as <span class="mono">index.html</span> and host with GitHub Pages / any HTTPS host.<br/>
+          Option B (local): on a laptop run <span class="mono">python -m http.server 8000</span>, then open <span class="mono">http://localhost:8000</span> on that same device.
+        </div>
+      </div>
+    </div>
+  </main>
+
+<script>
+(() => {
+  // ======= Firmware UUIDs (from your .c file) =======
+  const SERVICE_UUID = 'cddf1000-30f7-4671-8b43-5e40ba53514a';
+  const DATA_CHAR_UUID = 'cddf1002-30f7-4671-8b43-5e40ba53514a';
+
+  // ======= UI =======
+  const btnConnect = document.getElementById('btnConnect');
+  const btnDisconnect = document.getElementById('btnDisconnect');
+  const btnClear = document.getElementById('btnClear');
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const deviceNameEl = document.getElementById('deviceName');
+  const winSecondsEl = document.getElementById('winSeconds');
+  const autoScaleEl = document.getElementById('autoScale');
+
+  const kpiRate = document.getElementById('kpiRate');
+  const kpiV = document.getElementById('kpiV');
+  const kpiT = document.getElementById('kpiT');
+  const kpiHex = document.getElementById('kpiHex');
+
+  const canvas = document.getElementById('plot');
+  const ctx = canvas.getContext('2d');
+
+  function setStatus(ok, msg) {
+    statusDot.classList.toggle('ok', !!ok);
+    statusDot.classList.toggle('bad', ok === false);
+    statusText.textContent = msg;
+  }
+
+  // ======= Data buffers =======
+  // Store last N seconds of points.
+  let times = [];   // seconds (float)
+  let volts = [];   // volts (float)
+
+  // Notification rate estimate (over last ~2s)
+  let notifTimestampsMs = [];
+
+  // ======= BLE handles =======
+  let device = null;
+  let server = null;
+  let dataChar = null;
+
+  function supportsWebBluetooth() {
+    return !!navigator.bluetooth;
+  }
+
+  // Convert DataView to hex string
+  function toHex(u8) {
+    let s = '';
+    for (const b of u8) s += b.toString(16).padStart(2,'0');
+    return s;
+  }
+
+  function onNotification(event) {
+    const value = event.target.value;
+    if (!value || value.byteLength < 8) return;
+
+    // Packet: float32 timestamp, float32 voltage (little-endian)
+    const t = value.getFloat32(0, true);
+    const v = value.getFloat32(4, true);
+
+    times.push(t);
+    volts.push(v);
+
+    // Maintain window
+    const winS = Math.max(1, Math.min(120, Number(winSecondsEl.value || 10)));
+    const tMin = t - winS;
+    while (times.length && times[0] < tMin) {
+      times.shift();
+      volts.shift();
+    }
+
+    // Rate estimate
+    const nowMs = performance.now();
+    notifTimestampsMs.push(nowMs);
+    const cutoff = nowMs - 2000;
+    while (notifTimestampsMs.length && notifTimestampsMs[0] < cutoff) notifTimestampsMs.shift();
+    const rate = notifTimestampsMs.length / 2;
+
+    // KPIs
+    kpiRate.textContent = isFinite(rate) ? rate.toFixed(1) : '—';
+    kpiV.textContent = isFinite(v) ? v.toFixed(4) + ' V' : '—';
+    kpiT.textContent = isFinite(t) ? t.toFixed(3) + ' s' : '—';
+    const bytes = new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
+    kpiHex.textContent = toHex(bytes);
+
+    draw();
+  }
+
+  function clearData() {
+    times = [];
+    volts = [];
+    notifTimestampsMs = [];
+    kpiRate.textContent = '—';
+    kpiV.textContent = '—';
+    kpiT.textContent = '—';
+    kpiHex.textContent = '—';
+    draw(true);
+  }
+
+  function draw(clearOnly=false) {
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // background
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.fillRect(0, 0, w, h);
+
+    // axes + grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = 1;
+
+    // horizontal grid
+    for (let i=1;i<6;i++) {
+      const y = (h*i)/6;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+
+    if (clearOnly || times.length < 2) {
+      // message
+      ctx.fillStyle = 'rgba(255,255,255,0.65)';
+      ctx.font = '16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+      ctx.fillText('No data yet. Connect and start notifications…', 18, 34);
+      return;
+    }
+
+    const t0 = times[0];
+    const t1 = times[times.length - 1];
+
+    // Y scale
+    let vMin, vMax;
+    if (autoScaleEl.checked) {
+      vMin = Math.min(...volts);
+      vMax = Math.max(...volts);
+      const pad = (vMax - vMin) * 0.12 || 0.02;
+      vMin -= pad;
+      vMax += pad;
+    } else {
+      // Fixed scale example: 0..3.3V
+      vMin = 0.0;
+      vMax = 3.3;
+    }
+
+    // Avoid divide-by-zero
+    if (vMax - vMin < 1e-9) { vMax = vMin + 1e-6; }
+    if (t1 - t0 < 1e-9) return;
+
+    // Draw trace
+    ctx.strokeStyle = 'rgba(103,183,255,0.95)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i=0;i<times.length;i++) {
+      const x = ((times[i] - t0) / (t1 - t0)) * (w - 24) + 12;
+      const y = (1 - (volts[i] - vMin) / (vMax - vMin)) * (h - 24) + 12;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Labels
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+    ctx.fillText(`${(t1 - t0).toFixed(2)} s window`, 14, h - 10);
+    ctx.fillText(`V: ${vMin.toFixed(3)} .. ${vMax.toFixed(3)}`, 14, 20);
+  }
+
+  async function disconnect() {
+    try {
+      if (dataChar) {
+        try {
+          await dataChar.stopNotifications();
+        } catch (_) {}
+        dataChar.removeEventListener('characteristicvaluechanged', onNotification);
+      }
+    } finally {
+      dataChar = null;
+      server = null;
+      if (device && device.gatt && device.gatt.connected) {
+        device.gatt.disconnect();
+      }
+      setStatus(false, 'Disconnected');
+      btnDisconnect.disabled = true;
+      btnConnect.disabled = false;
+      deviceNameEl.textContent = '—';
+    }
+  }
+
+  async function connect() {
+    if (!supportsWebBluetooth()) {
+      alert('Web Bluetooth not supported in this browser. Use Chrome/Edge on Android.');
+      return;
+    }
+
+    clearData();
+
+    try {
+      setStatus(null, 'Opening device picker…');
+
+      // Filter by your custom service UUID.
+      device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [SERVICE_UUID] }],
+        optionalServices: [SERVICE_UUID]
+      });
+
+      deviceNameEl.textContent = device.name || '(unnamed)';
+
+      device.addEventListener('gattserverdisconnected', () => {
+        setStatus(false, 'Disconnected');
+        btnDisconnect.disabled = true;
+        btnConnect.disabled = false;
+      });
+
+      setStatus(null, 'Connecting…');
+      server = await device.gatt.connect();
+
+      setStatus(null, 'Discovering services…');
+      const service = await server.getPrimaryService(SERVICE_UUID);
+
+      setStatus(null, 'Subscribing…');
+      dataChar = await service.getCharacteristic(DATA_CHAR_UUID);
+      await dataChar.startNotifications();
+      dataChar.addEventListener('characteristicvaluechanged', onNotification);
+
+      setStatus(true, 'Connected + streaming');
+      btnDisconnect.disabled = false;
+      btnConnect.disabled = true;
+
+      draw(true);
+    } catch (err) {
+      console.error(err);
+      setStatus(false, 'Error');
+      btnDisconnect.disabled = true;
+      btnConnect.disabled = false;
+      alert('BLE connect failed: ' + (err?.message || err));
+      await disconnect();
+    }
+  }
+
+  // Buttons
+  btnConnect.addEventListener('click', connect);
+  btnDisconnect.addEventListener('click', disconnect);
+  btnClear.addEventListener('click', clearData);
+
+  // Initial render
+  setStatus(false, 'Disconnected');
+  draw(true);
+})();
+</script>
+</body>
+</html>
