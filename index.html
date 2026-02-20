@@ -19,7 +19,8 @@
       --plot-grid: rgba(255,255,255,0.10);
       --plot-axis: rgba(255,255,255,0.20);
       --plot-text: rgba(255,255,255,0.75);
-      --plot-trace: rgba(103,183,255,0.95);
+      --plot-trace: rgba(103,183,255,0.95); /* device #1 */
+      --plot-trace2: rgba(255, 80, 80, 0.95); /* device #2 (RED) */
     }
 
     body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }
@@ -104,11 +105,11 @@
       <div class="small" style="margin-top:10px; line-height:1.45;">
         UUIDs: <span class="mono">Service</span> <span class="mono">cddf1000-30f7-4671-8b43-5e40ba53514a</span> • <span class="mono">Notify</span> <span class="mono">cddf1002-30f7-4671-8b43-5e40ba53514a</span><br/>
         Packet parsing: supports <span class="mono">8, 16, 24, ...</span> bytes per notification (multiple samples packed: 8 bytes each).
-        Overlay: #1 solid, #2 dashed (same color).
+        Overlay: #1 solid blue, #2 solid red.
       </div>
 
       <!-- Processed plot -->
-      <div class="small" style="margin-top:12px; margin-bottom:6px;">Processed (baseline removed, shifted to ≥ 0)</div>
+      <div class="small" style="margin-top:12px; margin-bottom:6px;">Processed (baseline removed, shifted to ≥ 0, normalized 0→1)</div>
       <canvas id="plotProc" width="1400" height="320" style="height:260px;"></canvas>
     </div>
 
@@ -145,7 +146,7 @@
       <div class="card">
         <div class="small" style="line-height:1.55;">
           <div style="font-weight:700; margin-bottom:6px;">Baseline removal</div>
-          Baseline is computed as the <span class="mono">median</span> of the last ~2 seconds of samples (robust vs drift/outliers). Then we subtract it and shift so all processed values are ≥ 0.
+          Baseline is computed as the <span class="mono">median</span> of the last ~2 seconds of samples (robust vs drift/outliers). Then we subtract it and shift so all processed values are ≥ 0. Finally we normalize to 0–1.
         </div>
       </div>
     </div>
@@ -212,14 +213,16 @@ function applyPlotTheme() {
     document.documentElement.style.setProperty('--plot-grid', 'rgba(255,255,255,0.10)');
     document.documentElement.style.setProperty('--plot-axis', 'rgba(255,255,255,0.20)');
     document.documentElement.style.setProperty('--plot-text', 'rgba(255,255,255,0.78)');
-    document.documentElement.style.setProperty('--plot-trace', 'rgba(103,183,255,0.95)');
+    document.documentElement.style.setProperty('--plot-trace', 'rgba(103,183,255,0.95)');   // dev1
+    document.documentElement.style.setProperty('--plot-trace2', 'rgba(255,80,80,0.95)');   // dev2 (RED)
     if (btnTheme) btnTheme.textContent = 'Plot: Dark';
   } else {
     document.documentElement.style.setProperty('--plot-bg', '#ffffff');
     document.documentElement.style.setProperty('--plot-grid', 'rgba(0,0,0,0.12)');
     document.documentElement.style.setProperty('--plot-axis', 'rgba(0,0,0,0.22)');
     document.documentElement.style.setProperty('--plot-text', 'rgba(0,0,0,0.78)');
-    document.documentElement.style.setProperty('--plot-trace', 'rgba(10,60,140,0.95)');
+    document.documentElement.style.setProperty('--plot-trace', 'rgba(10,60,140,0.95)');    // dev1
+    document.documentElement.style.setProperty('--plot-trace2', 'rgba(200,0,0,0.95)');      // dev2 (RED)
     if (btnTheme) btnTheme.textContent = 'Plot: Light';
   }
   requestDraw();
@@ -488,15 +491,16 @@ function drawAxes(ctxX, w, h, padL, padR, padT, padB, t0, t1, vMin, vMax, title)
   ctxX.fillText(title, padL, 14);
 }
 
-function drawTrace(ctxX, padL, padT, plotW, plotH, t0, t1, vMin, vMax, timesArr, voltsArr, startIdx, dashed) {
+/* UPDATED: per-device color + solid line (no dashed) */
+function drawTrace(ctxX, padL, padT, plotW, plotH, t0, t1, vMin, vMax, timesArr, voltsArr, startIdx, colorCssVar) {
   const count = timesArr.length - startIdx;
   if (count < 2) return;
 
   const css = getComputedStyle(document.documentElement);
   ctxX.save();
-  ctxX.strokeStyle = css.getPropertyValue('--plot-trace').trim();
+  ctxX.strokeStyle = css.getPropertyValue(colorCssVar).trim();
   ctxX.lineWidth = 2;
-  ctxX.setLineDash(dashed ? [8, 6] : []);
+  ctxX.setLineDash([]); // ALWAYS solid
 
   const maxDrawPoints = Math.min(4000, count);
   const step = Math.max(1, Math.floor(count / maxDrawPoints));
@@ -569,8 +573,8 @@ function drawOverlay(clearOnly=false) {
   const plotW = w - padL - padR;
   const plotH = h - padT - padB;
 
-  if (has0) drawTrace(ctx, padL, padT, plotW, plotH, t0, t1, vMin, vMax, dev[0].times, dev[0].volts, dev[0].startIdx, false);
-  if (has1) drawTrace(ctx, padL, padT, plotW, plotH, t0, t1, vMin, vMax, dev[1].times, dev[1].volts, dev[1].startIdx, true);
+  if (has0) drawTrace(ctx, padL, padT, plotW, plotH, t0, t1, vMin, vMax, dev[0].times, dev[0].volts, dev[0].startIdx, '--plot-trace');
+  if (has1) drawTrace(ctx, padL, padT, plotW, plotH, t0, t1, vMin, vMax, dev[1].times, dev[1].volts, dev[1].startIdx, '--plot-trace2');
 }
 
 function drawProcessed(clearOnly=false) {
@@ -604,7 +608,7 @@ function drawProcessed(clearOnly=false) {
   const b0 = has0 ? baselineMedianLast2s(0, t1) : 0;
   const b1 = has1 ? baselineMedianLast2s(1, t1) : 0;
 
-  // find processed min/max in window
+  // processed min/max in window (after baseline removal + shift)
   let pMin = Infinity, pMax = -Infinity;
   for (let di = 0; di < DEV_N; di++) {
     const d = dev[di];
@@ -618,15 +622,23 @@ function drawProcessed(clearOnly=false) {
   }
   if (!isFinite(pMin) || !isFinite(pMax)) { pMin = 0; pMax = 1; }
 
+  // shift to >= 0
   const shift = (pMin < 0) ? -pMin : 0;
-  const vMin = 0;
-  const vMax = (pMax + shift) + ((pMax - pMin) * 0.12 || 0.02);
 
-  drawAxes(ctxProc, w, h, padL, padR, padT, padB, t0, t1, vMin, vMax, 'Processed (baseline removed, shifted ≥ 0)');
+  // NEW: normalize to [0,1] using windowed min/max AFTER shift
+  const shiftedMin = 0;
+  const shiftedMax = (pMax + shift);
+  const denom = (shiftedMax - shiftedMin);
+  const safeDenom = (Math.abs(denom) < 1e-12) ? 1 : denom;
+
+  const vMin = 0;
+  const vMax = 1;
+
+  drawAxes(ctxProc, w, h, padL, padR, padT, padB, t0, t1, vMin, vMax, 'Processed (baseline removed, shifted ≥ 0, normalized 0–1)');
   const plotW = w - padL - padR;
   const plotH = h - padT - padB;
 
-  function drawProc(di, dashed) {
+  function drawProc(di, colorCssVar) {
     const d = dev[di];
     const base = (di === 0) ? b0 : b1;
     const count = d.times.length - d.startIdx;
@@ -634,9 +646,9 @@ function drawProcessed(clearOnly=false) {
 
     const css = getComputedStyle(document.documentElement);
     ctxProc.save();
-    ctxProc.strokeStyle = css.getPropertyValue('--plot-trace').trim();
+    ctxProc.strokeStyle = css.getPropertyValue(colorCssVar).trim();
     ctxProc.lineWidth = 2;
-    ctxProc.setLineDash(dashed ? [8, 6] : []);
+    ctxProc.setLineDash([]); // solid
 
     const maxDrawPoints = Math.min(4000, count);
     const step = Math.max(1, Math.floor(count / maxDrawPoints));
@@ -646,9 +658,13 @@ function drawProcessed(clearOnly=false) {
     for (let i = d.startIdx; i < d.times.length; i += step) {
       const tt = d.times[i];
       if (tt < t0) continue;
-      const pp = (d.volts[i] - base) + shift;
+
+      const shifted = (d.volts[i] - base) + shift;     // >= 0
+      const norm = (shifted - shiftedMin) / safeDenom; // 0..1
+
       const x = padL + ((tt - t0) / (t1 - t0)) * plotW;
-      const y = padT + (1 - (pp - vMin) / (vMax - vMin)) * plotH;
+      const y = padT + (1 - (norm - vMin) / (vMax - vMin)) * plotH;
+
       if (first) { ctxProc.moveTo(x, y); first = false; }
       else ctxProc.lineTo(x, y);
     }
@@ -656,8 +672,8 @@ function drawProcessed(clearOnly=false) {
     ctxProc.restore();
   }
 
-  if (has0) drawProc(0, false);
-  if (has1) drawProc(1, true);
+  if (has0) drawProc(0, '--plot-trace');
+  if (has1) drawProc(1, '--plot-trace2');
 }
 
 async function disconnectIdx(idx) {
