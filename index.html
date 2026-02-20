@@ -89,7 +89,13 @@
         </div>
       </div>
 
-      $1
+      <div class="controls" style="margin-top:10px;">
+        <span class="small">Window (s):</span>
+        <input id="winSeconds" type="number" min="1" max="120" step="1" value="10" />
+        <span class="small">Auto-scale:</span>
+        <input id="autoScale" type="checkbox" checked />
+        <span class="small" id="uiError" style="display:none; color:#ffd1d1;"></span>
+      </div>
 
       <!-- Baseline-removed waveform (processed) -->
       <div class="small" style="margin-top:12px; margin-bottom:6px;">Processed (baseline removed, shifted to ≥ 0)</div>
@@ -413,8 +419,7 @@ function downloadCSV() {
     }
   }
 
-  const blob = new Blob([lines.join('
-')], { type: 'text/csv' });
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
