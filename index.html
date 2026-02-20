@@ -31,6 +31,7 @@
     .card { background: var(--card); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
 
     .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .controls.tight { gap: 8px; }
     button { appearance: none; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06); color: var(--text);
       padding: 10px 12px; border-radius: 12px; font-weight: 650; cursor: pointer; }
     button.primary { border-color: rgba(103,183,255,0.6); background: rgba(103,183,255,0.15); }
@@ -45,7 +46,7 @@
     .dot.ok { background: var(--ok); }
     .dot.bad { background: var(--danger); }
 
-    canvas { width: 100%; height: 360px; background: var(--plot-bg); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); touch-action: pan-y; }
+    canvas { width: 100%; background: var(--plot-bg); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); touch-action: pan-y; }
 
     .kpi { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
     .kpi .item { padding: 10px; border-radius: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); }
@@ -58,30 +59,33 @@
     input[type="number"] { width: 110px; padding: 9px 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); color: var(--text); }
     input[type="checkbox"] { transform: scale(1.15); }
 
-    .footerbar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content: space-between; }
-    .footerbar .left, .footerbar .right { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-
     a { color: var(--accent); text-decoration: none; }
+    .err { color: #ffd1d1; }
   </style>
 </head>
 <body>
   <header>
     <h1>BLE Live Plotter (ANNA-B112)</h1>
-    <p>Web Bluetooth realtime plot + CSV export. Parses <span class="mono">(timestamp, voltage)</span> float32 pairs.</p>
+    <p>Two-device Web Bluetooth realtime overlay + baseline-removed plot + CSV export. Parses <span class="mono">(timestamp, voltage)</span> float32 pairs.</p>
   </header>
 
   <main>
     <!-- PLOT FIRST (on top) -->
     <div class="card">
-      <canvas id="plot" width="1400" height="480"></canvas>
+      <canvas id="plot" width="1400" height="480" style="height:360px;"></canvas>
 
       <div class="controls" style="margin-top:10px; justify-content: space-between;">
         <div class="controls tight">
-          <button id="btnConnect" class="primary" type="button">Connect</button>
-          <button id="btnDisconnect" class="danger" type="button" disabled>Disconnect</button>
+          <button id="btnConnect1" class="primary" type="button">Connect #1</button>
+          <button id="btnDisconnect1" class="danger" type="button" disabled>Disconnect #1</button>
+
+          <button id="btnConnect2" class="primary" type="button">Connect #2</button>
+          <button id="btnDisconnect2" class="danger" type="button" disabled>Disconnect #2</button>
+
           <span class="pill"><span id="statusDot" class="dot"></span><span id="statusText" class="small">Disconnected</span></span>
           <span class="pill"><span class="small">Device:</span><span id="deviceName" class="mono small">—</span></span>
         </div>
+
         <div class="controls tight">
           <button id="btnTheme" type="button">Plot: Dark</button>
           <button id="btnClear" type="button">Clear</button>
@@ -96,10 +100,16 @@
         <input id="autoScale" type="checkbox" checked />
         <span class="small err" id="uiError" style="display:none;"></span>
       </div>
+
       <div class="small" style="margin-top:10px; line-height:1.45;">
         UUIDs: <span class="mono">Service</span> <span class="mono">cddf1000-30f7-4671-8b43-5e40ba53514a</span> • <span class="mono">Notify</span> <span class="mono">cddf1002-30f7-4671-8b43-5e40ba53514a</span><br/>
         Packet parsing: supports <span class="mono">8, 16, 24, ...</span> bytes per notification (multiple samples packed: 8 bytes each).
+        Overlay: #1 solid, #2 dashed (same color).
       </div>
+
+      <!-- Processed plot -->
+      <div class="small" style="margin-top:12px; margin-bottom:6px;">Processed (baseline removed, shifted to ≥ 0)</div>
+      <canvas id="plotProc" width="1400" height="320" style="height:260px;"></canvas>
     </div>
 
     <div class="grid2">
@@ -110,11 +120,11 @@
             <div class="value" id="kpiRate">—</div>
           </div>
           <div class="item">
-            <div class="label">Latest voltage</div>
+            <div class="label">Latest voltage (active device)</div>
             <div class="value" id="kpiV">—</div>
           </div>
           <div class="item">
-            <div class="label">Latest timestamp</div>
+            <div class="label">Latest time (local)</div>
             <div class="value" id="kpiT">—</div>
           </div>
           <div class="item">
@@ -126,52 +136,32 @@
         <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 14px 0;" />
 
         <div class="small" style="line-height:1.55;">
-          <div style="font-weight:700; margin-bottom:6px;">Phone requirements</div>
-          • Android: Chrome/Edge works. Must be served from <span class="mono">https://</span> or <span class="mono">http://localhost</span>.<br/>
-          • iOS Safari: no Web Bluetooth.
+          <div style="font-weight:700; margin-bottom:6px;">Notes</div>
+          • We plot each device on a <span class="mono">local timebase</span> (seconds since first packet received per device), so overlays work even if both devices transmit timestamps starting at 0.<br/>
+          • Android: Chrome/Edge works. Must be served from <span class="mono">https://</span> or <span class="mono">http://localhost</span>. iOS Safari: no Web Bluetooth.
         </div>
       </div>
 
-      <!-- CONTROLS LAST (buttons at the end / bottom) -->
       <div class="card">
-        <div class="controls" style="margin-bottom:10px;">
-          <button id="btnConnect" class="primary">Connect</button>
-          <button id="btnDisconnect" class="danger" disabled>Disconnect</button>
-          <span class="pill"><span id="statusDot" class="dot"></span><span id="statusText" class="small">Disconnected</span></span>
-          <span class="pill"><span class="small">Device:</span><span id="deviceName" class="mono small">—</span></span>
-        </div>
-
-        <div class="footerbar">
-          <div class="left">
-            <span class="small">Window (s):</span>
-            <input id="winSeconds" type="number" min="1" max="120" step="1" value="10" />
-            <span class="small">Auto-scale:</span>
-            <input id="autoScale" type="checkbox" checked />
-          </div>
-          <div class="right">
-            <button id="btnTheme">Plot: Dark</button>
-            <button id="btnClear">Clear</button>
-            <button id="btnCsv">Download CSV</button>
-          </div>
-        </div>
-
-        <div class="small" style="margin-top:12px; line-height:1.5;">
-          If you see fewer points than expected: this viewer now (1) parses multiple samples per BLE notification, and (2) decouples drawing from BLE events (draws at ~60fps).
+        <div class="small" style="line-height:1.55;">
+          <div style="font-weight:700; margin-bottom:6px;">Baseline removal</div>
+          Baseline is computed as the <span class="mono">median</span> of the last ~2 seconds of samples (robust vs drift/outliers). Then we subtract it and shift so all processed values are ≥ 0.
         </div>
       </div>
     </div>
   </main>
 
 <script>
-// If Connect "does nothing", this script will show a visible error line under the plot.
-
 const SERVICE_UUID = 'cddf1000-30f7-4671-8b43-5e40ba53514a';
 const DATA_CHAR_UUID = 'cddf1002-30f7-4671-8b43-5e40ba53514a';
 
 const el = (id) => document.getElementById(id);
 
-const btnConnect = el('btnConnect');
-const btnDisconnect = el('btnDisconnect');
+const btnConnect1 = el('btnConnect1');
+const btnDisconnect1 = el('btnDisconnect1');
+const btnConnect2 = el('btnConnect2');
+const btnDisconnect2 = el('btnDisconnect2');
+
 const btnClear = el('btnClear');
 const btnCsv = el('btnCsv');
 const btnTheme = el('btnTheme');
@@ -190,13 +180,14 @@ const kpiHex = el('kpiHex');
 
 const canvas = el('plot');
 const ctx = canvas?.getContext('2d');
+const canvasProc = el('plotProc');
+const ctxProc = canvasProc?.getContext('2d');
 
 function showUiError(msg) {
   if (!uiError) { alert(msg); return; }
   uiError.style.display = 'inline';
   uiError.textContent = msg;
 }
-
 function clearUiError() {
   if (!uiError) return;
   uiError.style.display = 'none';
@@ -234,26 +225,40 @@ function applyPlotTheme() {
   requestDraw();
 }
 
-// Data
-const session = { t: [], v: [] };
-let times = [];
-let volts = [];
-let startIdx = 0;
-let sampleTimesMs = [];
+// ===== Two-device state =====
+const DEV_N = 2;
+const dev = Array.from({length: DEV_N}, () => ({
+  device: null,
+  server: null,
+  dataChar: null,
+  handler: null,
 
-// BLE
-let device = null;
-let server = null;
-let dataChar = null;
+  // session storage (CSV)
+  sessionLocalT: [],
+  sessionRawT: [],
+  sessionV: [],
+
+  // rolling for plot (local timebase)
+  times: [],
+  volts: [],
+  startIdx: 0,
+
+  t0LocalMs: null,
+  sampleTimesMs: [],
+  lastHex: '',
+  lastLocalT: NaN,
+  lastV: NaN,
+}));
 
 // Render throttle
 let drawPending = false;
 function requestDraw() {
-  if (drawPending || !ctx) return;
+  if (drawPending) return;
   drawPending = true;
   requestAnimationFrame(() => {
     drawPending = false;
-    draw();
+    drawOverlay();
+    drawProcessed();
   });
 }
 
@@ -263,73 +268,149 @@ function toHex(u8) {
   return s;
 }
 
-function addSample(t, v) {
-  session.t.push(t);
-  session.v.push(v);
+function addSample(idx, tRaw, v) {
+  const d = dev[idx];
+  const nowMs = performance.now();
+  if (d.t0LocalMs === null) d.t0LocalMs = nowMs;
+  const tLocal = (nowMs - d.t0LocalMs) / 1000.0;
 
-  times.push(t);
-  volts.push(v);
+  // session
+  d.sessionLocalT.push(tLocal);
+  d.sessionRawT.push(tRaw);
+  d.sessionV.push(v);
 
+  // rolling plot
+  d.times.push(tLocal);
+  d.volts.push(v);
+
+  d.lastLocalT = tLocal;
+  d.lastV = v;
+
+  // maintain window
   const winS = Math.max(1, Math.min(120, Number(winSecondsEl?.value || 10)));
-  const tMin = t - winS;
-  while (startIdx < times.length && times[startIdx] < tMin) startIdx++;
+  const tMin = tLocal - winS;
+  while (d.startIdx < d.times.length && d.times[d.startIdx] < tMin) d.startIdx++;
 
-  if (startIdx > 4000) {
-    times = times.slice(startIdx);
-    volts = volts.slice(startIdx);
-    startIdx = 0;
+  if (d.startIdx > 4000) {
+    d.times = d.times.slice(d.startIdx);
+    d.volts = d.volts.slice(d.startIdx);
+    d.startIdx = 0;
   }
 
-  const nowMs = performance.now();
-  sampleTimesMs.push(nowMs);
+  // sample rate estimate
+  d.sampleTimesMs.push(nowMs);
   const cutoff = nowMs - 2000;
-  while (sampleTimesMs.length && sampleTimesMs[0] < cutoff) sampleTimesMs.shift();
-
-  const rate = sampleTimesMs.length / 2;
-  if (kpiRate) kpiRate.textContent = isFinite(rate) ? rate.toFixed(1) : '—';
-  if (kpiV) kpiV.textContent = isFinite(v) ? v.toFixed(4) + ' V' : '—';
-  if (kpiT) kpiT.textContent = isFinite(t) ? t.toFixed(3) + ' s' : '—';
+  while (d.sampleTimesMs.length && d.sampleTimesMs[0] < cutoff) d.sampleTimesMs.shift();
 }
 
-function onNotification(event) {
-  const dv = event?.target?.value;
-  if (!dv || dv.byteLength < 8) return;
+function onNotificationFactory(idx) {
+  return (event) => {
+    const dv = event?.target?.value;
+    if (!dv || dv.byteLength < 8) return;
 
-  const bytes = new Uint8Array(dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength));
-  if (kpiHex) kpiHex.textContent = toHex(bytes);
+    const bytes = new Uint8Array(dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength));
+    dev[idx].lastHex = toHex(bytes);
 
-  // Parse multiple samples packed into one notification (8 bytes per sample)
-  const n = Math.floor(dv.byteLength / 8);
-  for (let i = 0; i < n; i++) {
-    const off = i * 8;
-    const t = dv.getFloat32(off + 0, true);
-    const v = dv.getFloat32(off + 4, true);
-    addSample(t, v);
-  }
+    // Parse multiple samples packed into one notification (8 bytes per sample)
+    const n = Math.floor(dv.byteLength / 8);
+    for (let i = 0; i < n; i++) {
+      const off = i * 8;
+      const t = dv.getFloat32(off + 0, true);
+      const v = dv.getFloat32(off + 4, true);
+      addSample(idx, t, v);
+    }
 
-  requestDraw();
+    updateKPIs(idx);
+    requestDraw();
+  };
+}
+
+function updateKPIs(activeIdx) {
+  const d = dev[activeIdx];
+
+  const rate = (d.sampleTimesMs.length / 2);
+  if (kpiRate) kpiRate.textContent = isFinite(rate) ? rate.toFixed(1) : '—';
+  if (kpiV) kpiV.textContent = isFinite(d.lastV) ? d.lastV.toFixed(4) + ' V' : '—';
+  if (kpiT) kpiT.textContent = isFinite(d.lastLocalT) ? d.lastLocalT.toFixed(3) + ' s' : '—';
+  if (kpiHex) kpiHex.textContent = d.lastHex || '—';
+
+  const name1 = dev[0].device?.name || '';
+  const name2 = dev[1].device?.name || '';
+  const label = [name1, name2].filter(Boolean).join(' + ') || '—';
+  if (deviceNameEl) deviceNameEl.textContent = label;
 }
 
 function clearData() {
-  session.t.length = 0;
-  session.v.length = 0;
-  times = [];
-  volts = [];
-  startIdx = 0;
-  sampleTimesMs = [];
+  for (let i = 0; i < DEV_N; i++) {
+    const d = dev[i];
+    d.sessionLocalT.length = 0;
+    d.sessionRawT.length = 0;
+    d.sessionV.length = 0;
+
+    d.times = [];
+    d.volts = [];
+    d.startIdx = 0;
+
+    d.t0LocalMs = null;
+    d.sampleTimesMs = [];
+    d.lastHex = '';
+    d.lastLocalT = NaN;
+    d.lastV = NaN;
+  }
 
   if (kpiRate) kpiRate.textContent = '—';
   if (kpiV) kpiV.textContent = '—';
   if (kpiT) kpiT.textContent = '—';
   if (kpiHex) kpiHex.textContent = '—';
+  if (deviceNameEl) deviceNameEl.textContent = '—';
 
-  draw(true);
+  drawOverlay(true);
+  drawProcessed(true);
+}
+
+function median(arr) {
+  if (!arr.length) return NaN;
+  const a = arr.slice().sort((x,y)=>x-y);
+  const m = Math.floor(a.length/2);
+  return (a.length % 2) ? a[m] : (a[m-1] + a[m]) / 2;
+}
+
+// baseline = median of last ~2 seconds in current window
+function baselineMedianLast2s(idx, t1Local) {
+  const d = dev[idx];
+  const tMin = t1Local - 2.0;
+  const slice = [];
+  for (let i = d.times.length - 1; i >= d.startIdx; i--) {
+    if (d.times[i] < tMin) break;
+    slice.push(d.volts[i]);
+  }
+  return median(slice);
 }
 
 function downloadCSV() {
-  if (!session.t.length) { alert('No data to export yet.'); return; }
-  const lines = ['timestamp_s,voltage_V'];
-  for (let i = 0; i < session.t.length; i++) lines.push(`${session.t[i]},${session.v[i]}`);
+  const total = dev[0].sessionLocalT.length + dev[1].sessionLocalT.length;
+  if (!total) { alert('No data to export yet.'); return; }
+
+  const lines = ['device,local_time_s,raw_time_s,voltage_V,processed_V'];
+
+  for (let i = 0; i < DEV_N; i++) {
+    const d = dev[i];
+    const name = d.device?.name || `dev${i+1}`;
+
+    // baseline for CSV: use baseline from last point's time
+    const t1 = d.sessionLocalT.length ? d.sessionLocalT[d.sessionLocalT.length - 1] : 0;
+    const base = isFinite(t1) ? baselineMedianLast2s(i, t1) : 0;
+
+    for (let k = 0; k < d.sessionLocalT.length; k++) {
+      const tLocal = d.sessionLocalT[k];
+      const tRaw = d.sessionRawT[k];
+      const v = d.sessionV[k];
+      let p = v - base;
+      if (!isFinite(p)) p = 0;
+      lines.push(`${name},${tLocal},${tRaw},${v},${p}`);
+    }
+  }
+
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -342,39 +423,140 @@ function downloadCSV() {
   URL.revokeObjectURL(url);
 }
 
-function draw(clearOnly=false) {
-  if (!ctx || !canvas) return;
-
-  const w = canvas.width;
-  const h = canvas.height;
-  const padL = 64, padR = 14, padT = 16, padB = 42;
-
+function drawAxes(ctxX, w, h, padL, padR, padT, padB, t0, t1, vMin, vMax, title) {
   const css = getComputedStyle(document.documentElement);
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = css.getPropertyValue('--plot-bg').trim();
-  ctx.fillRect(0, 0, w, h);
-
-  const count = Math.max(0, times.length - startIdx);
   const txt = css.getPropertyValue('--plot-text').trim();
 
-  if (clearOnly || count < 2) {
-    ctx.fillStyle = txt;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+
+  ctxX.clearRect(0, 0, w, h);
+  ctxX.fillStyle = css.getPropertyValue('--plot-bg').trim();
+  ctxX.fillRect(0, 0, w, h);
+
+  // Grid
+  ctxX.strokeStyle = css.getPropertyValue('--plot-grid').trim();
+  ctxX.lineWidth = 1;
+
+  const yTicks = 5;
+  for (let i = 0; i <= yTicks; i++) {
+    const y = padT + (plotH * i) / yTicks;
+    ctxX.beginPath();
+    ctxX.moveTo(padL, y);
+    ctxX.lineTo(padL + plotW, y);
+    ctxX.stroke();
+  }
+
+  const xTicks = 5;
+  for (let i = 0; i <= xTicks; i++) {
+    const x = padL + (plotW * i) / xTicks;
+    ctxX.beginPath();
+    ctxX.moveTo(x, padT);
+    ctxX.lineTo(x, padT + plotH);
+    ctxX.stroke();
+  }
+
+  // Axes
+  ctxX.strokeStyle = css.getPropertyValue('--plot-axis').trim();
+  ctxX.lineWidth = 1.5;
+  ctxX.beginPath();
+  ctxX.moveTo(padL, padT);
+  ctxX.lineTo(padL, padT + plotH);
+  ctxX.lineTo(padL + plotW, padT + plotH);
+  ctxX.stroke();
+
+  // Labels
+  ctxX.fillStyle = txt;
+  ctxX.font = '13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+
+  for (let i = 0; i <= yTicks; i++) {
+    const frac = 1 - (i / yTicks);
+    const v = vMin + frac * (vMax - vMin);
+    const y = padT + (plotH * i) / yTicks;
+    ctxX.fillText(v.toFixed(3), 10, y + 4);
+  }
+  ctxX.fillText('Voltage (V)', 10, 14);
+
+  for (let i = 0; i <= xTicks; i++) {
+    const frac = i / xTicks;
+    const t = t0 + frac * (t1 - t0);
+    const x = padL + (plotW * i) / xTicks;
+    ctxX.fillText(t.toFixed(2), x - 12, padT + plotH + 22);
+  }
+  ctxX.fillText('Time (s)', padL + plotW - 70, padT + plotH + 38);
+
+  ctxX.fillText(title, padL, 14);
+}
+
+function drawTrace(ctxX, padL, padT, plotW, plotH, t0, t1, vMin, vMax, timesArr, voltsArr, startIdx, dashed) {
+  const count = timesArr.length - startIdx;
+  if (count < 2) return;
+
+  const css = getComputedStyle(document.documentElement);
+  ctxX.save();
+  ctxX.strokeStyle = css.getPropertyValue('--plot-trace').trim();
+  ctxX.lineWidth = 2;
+  ctxX.setLineDash(dashed ? [8, 6] : []);
+
+  const maxDrawPoints = Math.min(4000, count);
+  const step = Math.max(1, Math.floor(count / maxDrawPoints));
+
+  ctxX.beginPath();
+  let first = true;
+  for (let i = startIdx; i < timesArr.length; i += step) {
+    const tt = timesArr[i];
+    if (tt < t0) continue;
+    const x = padL + ((tt - t0) / (t1 - t0)) * plotW;
+    const y = padT + (1 - (voltsArr[i] - vMin) / (vMax - vMin)) * plotH;
+    if (first) { ctxX.moveTo(x, y); first = false; }
+    else ctxX.lineTo(x, y);
+  }
+  ctxX.stroke();
+  ctxX.restore();
+}
+
+function drawOverlay(clearOnly=false) {
+  if (!ctx || !canvas) return;
+
+  const w = canvas.width, h = canvas.height;
+  const padL = 64, padR = 14, padT = 16, padB = 42;
+
+  const has0 = (dev[0].times.length - dev[0].startIdx) >= 2;
+  const has1 = (dev[1].times.length - dev[1].startIdx) >= 2;
+
+  if (clearOnly || (!has0 && !has1)) {
+    const css = getComputedStyle(document.documentElement);
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle = css.getPropertyValue('--plot-bg').trim();
+    ctx.fillRect(0,0,w,h);
+    ctx.fillStyle = css.getPropertyValue('--plot-text').trim();
     ctx.font = '16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
     ctx.fillText('No data yet. Connect and start notifications…', 18, 34);
     return;
   }
 
-  const t0 = times[startIdx];
-  const t1 = times[times.length - 1];
+  // Shared time window on local timebase
+  const t1 = Math.max(
+    has0 ? dev[0].times[dev[0].times.length - 1] : -Infinity,
+    has1 ? dev[1].times[dev[1].times.length - 1] : -Infinity
+  );
+  const winS = Math.max(1, Math.min(120, Number(winSecondsEl?.value || 10)));
+  const t0 = t1 - winS;
 
-  let vMin, vMax;
-  if (autoScaleEl?.checked) {
-    vMin = Infinity; vMax = -Infinity;
-    for (let i = startIdx; i < volts.length; i++) {
-      const v = volts[i];
+  // Voltage range across both devices in window
+  let vMin = Infinity, vMax = -Infinity;
+  for (let di = 0; di < DEV_N; di++) {
+    const d = dev[di];
+    for (let i = d.times.length - 1; i >= d.startIdx; i--) {
+      if (d.times[i] < t0) break;
+      const v = d.volts[i];
       if (v < vMin) vMin = v;
       if (v > vMax) vMax = v;
     }
+  }
+  if (!isFinite(vMin) || !isFinite(vMax)) { vMin = 0; vMax = 1; }
+
+  if (autoScaleEl?.checked) {
     const span = (vMax - vMin);
     const pad = (span * 0.12) || 0.02;
     vMin -= pad; vMax += pad;
@@ -382,101 +564,131 @@ function draw(clearOnly=false) {
     vMin = 0.0; vMax = 3.3;
   }
   if (vMax - vMin < 1e-9) vMax = vMin + 1e-6;
-  if (t1 - t0 < 1e-9) return;
 
+  drawAxes(ctx, w, h, padL, padR, padT, padB, t0, t1, vMin, vMax, 'Overlay (raw voltage)');
   const plotW = w - padL - padR;
   const plotH = h - padT - padB;
 
-  // Grid
-  ctx.strokeStyle = css.getPropertyValue('--plot-grid').trim();
-  ctx.lineWidth = 1;
-
-  const yTicks = 5;
-  for (let i = 0; i <= yTicks; i++) {
-    const y = padT + (plotH * i) / yTicks;
-    ctx.beginPath();
-    ctx.moveTo(padL, y);
-    ctx.lineTo(padL + plotW, y);
-    ctx.stroke();
-  }
-
-  const xTicks = 5;
-  for (let i = 0; i <= xTicks; i++) {
-    const x = padL + (plotW * i) / xTicks;
-    ctx.beginPath();
-    ctx.moveTo(x, padT);
-    ctx.lineTo(x, padT + plotH);
-    ctx.stroke();
-  }
-
-  // Axes
-  ctx.strokeStyle = css.getPropertyValue('--plot-axis').trim();
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(padL, padT);
-  ctx.lineTo(padL, padT + plotH);
-  ctx.lineTo(padL + plotW, padT + plotH);
-  ctx.stroke();
-
-  // Labels
-  ctx.fillStyle = txt;
-  ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-
-  for (let i = 0; i <= yTicks; i++) {
-    const frac = 1 - (i / yTicks);
-    const v = vMin + frac * (vMax - vMin);
-    const y = padT + (plotH * i) / yTicks;
-    ctx.fillText(v.toFixed(3), 10, y + 4);
-  }
-  ctx.fillText('Voltage (V)', 10, 14);
-
-  for (let i = 0; i <= xTicks; i++) {
-    const frac = i / xTicks;
-    const t = t0 + frac * (t1 - t0);
-    const x = padL + (plotW * i) / xTicks;
-    ctx.fillText(t.toFixed(2), x - 12, padT + plotH + 22);
-  }
-  ctx.fillText('Time (s)', padL + plotW - 70, padT + plotH + 38);
-
-  // Trace
-  ctx.strokeStyle = css.getPropertyValue('--plot-trace').trim();
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-
-  const maxDrawPoints = Math.min(4000, count);
-  const step = Math.max(1, Math.floor(count / maxDrawPoints));
-
-  let first = true;
-  for (let i = startIdx; i < times.length; i += step) {
-    const x = padL + ((times[i] - t0) / (t1 - t0)) * plotW;
-    const y = padT + (1 - (volts[i] - vMin) / (vMax - vMin)) * plotH;
-    if (first) { ctx.moveTo(x, y); first = false; }
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  ctx.fillStyle = txt;
-  ctx.fillText(`Window: ${(t1 - t0).toFixed(2)} s • Points: ${count} (draw step=${step})`, padL, 14);
+  if (has0) drawTrace(ctx, padL, padT, plotW, plotH, t0, t1, vMin, vMax, dev[0].times, dev[0].volts, dev[0].startIdx, false);
+  if (has1) drawTrace(ctx, padL, padT, plotW, plotH, t0, t1, vMin, vMax, dev[1].times, dev[1].volts, dev[1].startIdx, true);
 }
 
-async function disconnect() {
+function drawProcessed(clearOnly=false) {
+  if (!ctxProc || !canvasProc) return;
+
+  const w = canvasProc.width, h = canvasProc.height;
+  const padL = 64, padR = 14, padT = 16, padB = 42;
+
+  const has0 = (dev[0].times.length - dev[0].startIdx) >= 2;
+  const has1 = (dev[1].times.length - dev[1].startIdx) >= 2;
+
+  if (clearOnly || (!has0 && !has1)) {
+    const css = getComputedStyle(document.documentElement);
+    ctxProc.clearRect(0,0,w,h);
+    ctxProc.fillStyle = css.getPropertyValue('--plot-bg').trim();
+    ctxProc.fillRect(0,0,w,h);
+    ctxProc.fillStyle = css.getPropertyValue('--plot-text').trim();
+    ctxProc.font = '16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+    ctxProc.fillText('Processed plot will appear here…', 18, 34);
+    return;
+  }
+
+  const t1 = Math.max(
+    has0 ? dev[0].times[dev[0].times.length - 1] : -Infinity,
+    has1 ? dev[1].times[dev[1].times.length - 1] : -Infinity
+  );
+  const winS = Math.max(1, Math.min(120, Number(winSecondsEl?.value || 10)));
+  const t0 = t1 - winS;
+
+  // baselines per device
+  const b0 = has0 ? baselineMedianLast2s(0, t1) : 0;
+  const b1 = has1 ? baselineMedianLast2s(1, t1) : 0;
+
+  // find processed min/max in window
+  let pMin = Infinity, pMax = -Infinity;
+  for (let di = 0; di < DEV_N; di++) {
+    const d = dev[di];
+    const base = (di === 0) ? b0 : b1;
+    for (let i = d.times.length - 1; i >= d.startIdx; i--) {
+      if (d.times[i] < t0) break;
+      const p = d.volts[i] - base;
+      if (p < pMin) pMin = p;
+      if (p > pMax) pMax = p;
+    }
+  }
+  if (!isFinite(pMin) || !isFinite(pMax)) { pMin = 0; pMax = 1; }
+
+  const shift = (pMin < 0) ? -pMin : 0;
+  const vMin = 0;
+  const vMax = (pMax + shift) + ((pMax - pMin) * 0.12 || 0.02);
+
+  drawAxes(ctxProc, w, h, padL, padR, padT, padB, t0, t1, vMin, vMax, 'Processed (baseline removed, shifted ≥ 0)');
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+
+  function drawProc(di, dashed) {
+    const d = dev[di];
+    const base = (di === 0) ? b0 : b1;
+    const count = d.times.length - d.startIdx;
+    if (count < 2) return;
+
+    const css = getComputedStyle(document.documentElement);
+    ctxProc.save();
+    ctxProc.strokeStyle = css.getPropertyValue('--plot-trace').trim();
+    ctxProc.lineWidth = 2;
+    ctxProc.setLineDash(dashed ? [8, 6] : []);
+
+    const maxDrawPoints = Math.min(4000, count);
+    const step = Math.max(1, Math.floor(count / maxDrawPoints));
+
+    ctxProc.beginPath();
+    let first = true;
+    for (let i = d.startIdx; i < d.times.length; i += step) {
+      const tt = d.times[i];
+      if (tt < t0) continue;
+      const pp = (d.volts[i] - base) + shift;
+      const x = padL + ((tt - t0) / (t1 - t0)) * plotW;
+      const y = padT + (1 - (pp - vMin) / (vMax - vMin)) * plotH;
+      if (first) { ctxProc.moveTo(x, y); first = false; }
+      else ctxProc.lineTo(x, y);
+    }
+    ctxProc.stroke();
+    ctxProc.restore();
+  }
+
+  if (has0) drawProc(0, false);
+  if (has1) drawProc(1, true);
+}
+
+async function disconnectIdx(idx) {
+  const d = dev[idx];
   try {
-    if (dataChar) {
-      try { await dataChar.stopNotifications(); } catch (_) {}
-      dataChar.removeEventListener('characteristicvaluechanged', onNotification);
+    if (d.dataChar && d.handler) {
+      try { await d.dataChar.stopNotifications(); } catch (_) {}
+      d.dataChar.removeEventListener('characteristicvaluechanged', d.handler);
     }
   } finally {
-    dataChar = null;
-    server = null;
-    if (device && device.gatt && device.gatt.connected) device.gatt.disconnect();
-    setStatus(false, 'Disconnected');
-    if (btnDisconnect) btnDisconnect.disabled = true;
-    if (btnConnect) btnConnect.disabled = false;
-    if (deviceNameEl) deviceNameEl.textContent = '—';
+    d.dataChar = null;
+    d.server = null;
+    d.handler = null;
+    if (d.device && d.device.gatt && d.device.gatt.connected) d.device.gatt.disconnect();
+    d.device = null;
   }
+  updateButtons();
+  requestDraw();
 }
 
-async function connect() {
+function updateButtons() {
+  btnDisconnect1.disabled = !dev[0].device;
+  btnDisconnect2.disabled = !dev[1].device;
+  btnConnect1.disabled = !!dev[0].device;
+  btnConnect2.disabled = !!dev[1].device;
+
+  const any = !!dev[0].device || !!dev[1].device;
+  if (!any) setStatus(false, 'Disconnected');
+}
+
+async function connectIdx(idx) {
   clearUiError();
 
   if (!supportsWebBluetooth()) {
@@ -484,82 +696,79 @@ async function connect() {
     return;
   }
 
-  // Must be user-gesture initiated
-  clearData();
-
   try {
-    setStatus(null, 'Opening device picker…');
+    setStatus(null, `Opening device picker (#${idx+1})…`);
 
-    device = await navigator.bluetooth.requestDevice({
+    const device = await navigator.bluetooth.requestDevice({
       filters: [{ services: [SERVICE_UUID] }],
       optionalServices: [SERVICE_UUID]
     });
 
-    if (deviceNameEl) deviceNameEl.textContent = device.name || '(unnamed)';
+    dev[idx].device = device;
 
-    device.addEventListener('gattserverdisconnected', () => {
+    device.addEventListener('gattserverdisconnected', async () => {
+      await disconnectIdx(idx);
       setStatus(false, 'Disconnected');
-      if (btnDisconnect) btnDisconnect.disabled = true;
-      if (btnConnect) btnConnect.disabled = false;
     });
 
-    setStatus(null, 'Connecting…');
-    server = await device.gatt.connect();
+    setStatus(null, `Connecting (#${idx+1})…`);
+    dev[idx].server = await device.gatt.connect();
 
-    setStatus(null, 'Discovering services…');
-    const service = await server.getPrimaryService(SERVICE_UUID);
+    setStatus(null, `Discovering services (#${idx+1})…`);
+    const service = await dev[idx].server.getPrimaryService(SERVICE_UUID);
 
-    setStatus(null, 'Subscribing…');
-    dataChar = await service.getCharacteristic(DATA_CHAR_UUID);
+    setStatus(null, `Subscribing (#${idx+1})…`);
+    dev[idx].dataChar = await service.getCharacteristic(DATA_CHAR_UUID);
 
-    await dataChar.startNotifications();
-    dataChar.addEventListener('characteristicvaluechanged', onNotification);
+    dev[idx].handler = onNotificationFactory(idx);
+    await dev[idx].dataChar.startNotifications();
+    dev[idx].dataChar.addEventListener('characteristicvaluechanged', dev[idx].handler);
 
-    setStatus(true, 'Connected + streaming');
-    if (btnDisconnect) btnDisconnect.disabled = false;
-    if (btnConnect) btnConnect.disabled = true;
+    setStatus(true, `Connected (#${idx+1}) + streaming`);
+    updateButtons();
 
+    // refresh device label
+    updateKPIs(idx);
     requestDraw();
   } catch (err) {
     console.error(err);
     setStatus(false, 'Error');
     showUiError('Connect failed: ' + (err?.message || err));
-    if (btnDisconnect) btnDisconnect.disabled = true;
-    if (btnConnect) btnConnect.disabled = false;
-    await disconnect();
+    await disconnectIdx(idx);
   }
 }
 
+// Bind
 function bindOrError() {
   const missing = [];
-  if (!btnConnect) missing.push('#btnConnect');
-  if (!btnDisconnect) missing.push('#btnDisconnect');
+  if (!btnConnect1) missing.push('#btnConnect1');
+  if (!btnDisconnect1) missing.push('#btnDisconnect1');
+  if (!btnConnect2) missing.push('#btnConnect2');
+  if (!btnDisconnect2) missing.push('#btnDisconnect2');
   if (!canvas || !ctx) missing.push('#plot');
+  if (!canvasProc || !ctxProc) missing.push('#plotProc');
   if (missing.length) {
     showUiError('UI missing: ' + missing.join(', '));
     return;
   }
 
-  btnConnect.addEventListener('click', connect);
-  btnConnect.onclick = connect;
+  btnConnect1.onclick = () => connectIdx(0);
+  btnDisconnect1.onclick = () => disconnectIdx(0);
+  btnConnect2.onclick = () => connectIdx(1);
+  btnDisconnect2.onclick = () => disconnectIdx(1);
 
-  btnDisconnect.addEventListener('click', disconnect);
-  btnDisconnect.onclick = disconnect;
+  btnClear.onclick = clearData;
+  btnCsv.onclick = downloadCSV;
 
-  btnClear?.addEventListener('click', clearData);
-  if (btnClear) btnClear.onclick = clearData;
-
-  btnCsv?.addEventListener('click', downloadCSV);
-  if (btnCsv) btnCsv.onclick = downloadCSV;
-
-  btnTheme?.addEventListener('click', () => {
+  btnTheme.onclick = () => {
     plotTheme = (plotTheme === 'dark') ? 'light' : 'dark';
     applyPlotTheme();
-  });
+  };
 
   setStatus(false, 'Disconnected');
   applyPlotTheme();
-  draw(true);
+  clearData();
+  updateButtons();
 }
 
 if (document.readyState === 'loading') {
