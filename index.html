@@ -118,7 +118,7 @@
             <div class="value" id="kpiV">—</div>
           </div>
           <div class="item">
-            <div class="label">Latest timestamp</div>
+            <div class="label">Latest time (local)</div>
             <div class="value" id="kpiT">—</div>
           </div>
           <div class="item">
@@ -130,46 +130,16 @@
         <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 14px 0;" />
 
         <div class="small" style="line-height:1.55;">
-          <div style="font-weight:700; margin-bottom:6px;">Phone requirements</div>
-          • Android: Chrome/Edge works. Must be served from <span class="mono">https://</span> or <span class="mono">http://localhost</span>.<br/>
-          • iOS Safari: no Web Bluetooth.
-        </div>
-      </div>
-    <div class="grid2">
-      <div class="card">
-        <div class="kpi">
-          <div class="item">
-            <div class="label">Samples / s (approx)</div>
-            <div class="value" id="kpiRate">—</div>
-          </div>
-          <div class="item">
-            <div class="label">Latest voltage</div>
-            <div class="value" id="kpiV">—</div>
-          </div>
-          <div class="item">
-            <div class="label">Latest timestamp</div>
-            <div class="value" id="kpiT">—</div>
-          </div>
-          <div class="item">
-            <div class="label">Last packet (hex)</div>
-            <div class="value mono" id="kpiHex" style="font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">—</div>
-          </div>
-        </div>
-
-        <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 14px 0;" />
-
-        <div class="small" style="line-height:1.55;">
-          <div style="font-weight:700; margin-bottom:6px;">Phone requirements</div>
-          • Android: Chrome/Edge works. Must be served from <span class="mono">https://</span> or <span class="mono">http://localhost</span>.<br/>
-          • iOS Safari: no Web Bluetooth.
+          <div style="font-weight:700; margin-bottom:6px;">Notes</div>
+          • Two devices often send timestamps that start at 0 independently. To make overlays work, we plot on a <span class="mono">local timebase</span> (time since first packet received per device).<br/>
+          • Android: Chrome/Edge works. Must be served from <span class="mono">https://</span> or <span class="mono">http://localhost</span>. iOS Safari: no Web Bluetooth.
         </div>
       </div>
 
       <div class="card">
         <div class="small" style="line-height:1.55;">
           <div style="font-weight:700; margin-bottom:6px;">Multi-device</div>
-          Tap <span class="mono">Connect</span> to connect device #1, then tap <span class="mono">Connect #2</span> to connect a second device.
-          Both waveforms will overlay in the same plot, and the processed plot shows baseline-removed versions.
+          Tap <span class="mono">Connect</span> (device #1), then <span class="mono">Connect #2</span> (device #2). Device #1 is solid; device #2 is dashed.
         </div>
       </div>
     </div>
@@ -279,11 +249,21 @@ const dev = Array.from({length: DEV_N}, () => ({
   device: null,
   server: null,
   dataChar: null,
-  sessionT: [],
+
+  // full-session storage (for CSV)
+  sessionTLocal: [],
+  sessionTRaw: [],
   sessionV: [],
+
+  // rolling window for plotting (LOCAL timebase)
   times: [],
   volts: [],
   startIdx: 0,
+
+  // timebase anchors
+  t0LocalMs: null,   // performance.now() at first sample
+  t0Raw: null,       // first raw timestamp seen
+
   sampleTimesMs: [],
   lastHex: '',
   lastT: NaN,
@@ -308,18 +288,32 @@ function toHex(u8) {
   return s;
 }
 
-function addSample(idx, t, v) {
+function addSample(idx, tRaw, v) {
   const d = dev[idx];
-  d.sessionT.push(t);
+
+  // Establish local timebase at first sample
+  const nowMs = performance.now();
+  if (d.t0LocalMs === null) d.t0LocalMs = nowMs;
+  if (d.t0Raw === null) d.t0Raw = tRaw;
+
+  // Use LOCAL time for plotting so two devices overlay even if raw timestamps differ
+  const tLocal = (nowMs - d.t0LocalMs) / 1000.0;
+
+  // store full session (CSV)
+  d.sessionTLocal.push(tLocal);
+  d.sessionTRaw.push(tRaw);
   d.sessionV.push(v);
-  d.times.push(t);
+
+  // rolling for plot
+  d.times.push(tLocal);
   d.volts.push(v);
-  d.lastT = t;
+
+  d.lastT = tLocal;
   d.lastV = v;
 
   // maintain time window (pointer)
   const winS = Math.max(1, Math.min(120, Number(winSecondsEl?.value || 10)));
-  const tMin = t - winS;
+  const tMin = tLocal - winS;
   while (d.startIdx < d.times.length && d.times[d.startIdx] < tMin) d.startIdx++;
 
   if (d.startIdx > 4000) {
@@ -329,11 +323,11 @@ function addSample(idx, t, v) {
   }
 
   // sample rate estimate
-  const nowMs = performance.now();
   d.sampleTimesMs.push(nowMs);
   const cutoff = nowMs - 2000;
   while (d.sampleTimesMs.length && d.sampleTimesMs[0] < cutoff) d.sampleTimesMs.shift();
 }
+
 
 function onNotificationFactory(idx) {
   return (event) => {
@@ -377,11 +371,17 @@ function updateKPIs() {
 
 function clearData() {
   for (let i = 0; i < DEV_N; i++) {
-    dev[i].sessionT.length = 0;
+    dev[i].sessionTLocal.length = 0;
+    dev[i].sessionTRaw.length = 0;
     dev[i].sessionV.length = 0;
+
     dev[i].times = [];
     dev[i].volts = [];
     dev[i].startIdx = 0;
+
+    dev[i].t0LocalMs = null;
+    dev[i].t0Raw = null;
+
     dev[i].sampleTimesMs = [];
     dev[i].lastHex = '';
     dev[i].lastT = NaN;
@@ -398,28 +398,30 @@ function clearData() {
   drawProcessed(true);
 }
 
+
 function downloadCSV() {
-  const total = dev[0].sessionT.length + dev[1].sessionT.length;
+  const total = dev[0].sessionTLocal.length + dev[1].sessionTLocal.length;
   if (!total) { alert('No data to export yet.'); return; }
 
-  // device,timestamp_s,voltage_V,processed_V
-  const lines = ['device,timestamp_s,voltage_V,processed_V'];
+  // device,local_time_s,raw_time_s,voltage_V,processed_V
+  const lines = ['device,local_time_s,raw_time_s,voltage_V,processed_V'];
 
-  // Baseline removal uses median of window (robust) per device, computed per-sample using current window baseline.
-  // For CSV simplicity, we export processed_V computed with baseline = median of LAST WINDOW.
+  // For CSV: processed_V uses baseline = median of LAST WINDOW (per device)
   for (let i = 0; i < DEV_N; i++) {
     const name = dev[i].device?.name || `dev${i+1}`;
     const baseline = medianWindowBaseline(i);
-    for (let k = 0; k < dev[i].sessionT.length; k++) {
-      const t = dev[i].sessionT[k];
+    for (let k = 0; k < dev[i].sessionTLocal.length; k++) {
+      const tLocal = dev[i].sessionTLocal[k];
+      const tRaw = dev[i].sessionTRaw[k];
       const v = dev[i].sessionV[k];
       let p = v - baseline;
       if (!isFinite(p)) p = 0;
-      lines.push(`${name},${t},${v},${p}`);
+      lines.push(`${name},${tLocal},${tRaw},${v},${p}`);
     }
   }
 
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const blob = new Blob([lines.join('
+')], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -430,6 +432,7 @@ function downloadCSV() {
   a.remove();
   URL.revokeObjectURL(url);
 }
+
 
 function median(arr) {
   if (!arr.length) return NaN;
