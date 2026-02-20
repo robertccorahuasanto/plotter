@@ -74,6 +74,28 @@
     <!-- PLOT FIRST (on top) -->
     <div class="card">
       <canvas id="plot" width="1400" height="480"></canvas>
+
+      <div class="controls" style="margin-top:10px; justify-content: space-between;">
+        <div class="controls tight">
+          <button id="btnConnect" class="primary" type="button">Connect</button>
+          <button id="btnDisconnect" class="danger" type="button" disabled>Disconnect</button>
+          <span class="pill"><span id="statusDot" class="dot"></span><span id="statusText" class="small">Disconnected</span></span>
+          <span class="pill"><span class="small">Device:</span><span id="deviceName" class="mono small">—</span></span>
+        </div>
+        <div class="controls tight">
+          <button id="btnTheme" type="button">Plot: Dark</button>
+          <button id="btnClear" type="button">Clear</button>
+          <button id="btnCsv" type="button">Download CSV</button>
+        </div>
+      </div>
+
+      <div class="controls" style="margin-top:10px;">
+        <span class="small">Window (s):</span>
+        <input id="winSeconds" type="number" min="1" max="120" step="1" value="10" />
+        <span class="small">Auto-scale:</span>
+        <input id="autoScale" type="checkbox" checked />
+        <span class="small err" id="uiError" style="display:none;"></span>
+      </div>
       <div class="small" style="margin-top:10px; line-height:1.45;">
         UUIDs: <span class="mono">Service</span> <span class="mono">cddf1000-30f7-4671-8b43-5e40ba53514a</span> • <span class="mono">Notify</span> <span class="mono">cddf1002-30f7-4671-8b43-5e40ba53514a</span><br/>
         Packet parsing: supports <span class="mono">8, 16, 24, ...</span> bytes per notification (multiple samples packed: 8 bytes each).
@@ -141,404 +163,410 @@
   </main>
 
 <script>
-(() => {
-  // ======= Firmware UUIDs =======
-  const SERVICE_UUID = 'cddf1000-30f7-4671-8b43-5e40ba53514a';
-  const DATA_CHAR_UUID = 'cddf1002-30f7-4671-8b43-5e40ba53514a';
+// If Connect "does nothing", this script will show a visible error line under the plot.
 
-  // ======= UI =======
-  const btnConnect = document.getElementById('btnConnect');
-  const btnDisconnect = document.getElementById('btnDisconnect');
-  const btnClear = document.getElementById('btnClear');
-  const btnCsv = document.getElementById('btnCsv');
-  const btnTheme = document.getElementById('btnTheme');
+const SERVICE_UUID = 'cddf1000-30f7-4671-8b43-5e40ba53514a';
+const DATA_CHAR_UUID = 'cddf1002-30f7-4671-8b43-5e40ba53514a';
 
-  const statusDot = document.getElementById('statusDot');
-  const statusText = document.getElementById('statusText');
-  const deviceNameEl = document.getElementById('deviceName');
-  const winSecondsEl = document.getElementById('winSeconds');
-  const autoScaleEl = document.getElementById('autoScale');
+const el = (id) => document.getElementById(id);
 
-  const kpiRate = document.getElementById('kpiRate');
-  const kpiV = document.getElementById('kpiV');
-  const kpiT = document.getElementById('kpiT');
-  const kpiHex = document.getElementById('kpiHex');
+const btnConnect = el('btnConnect');
+const btnDisconnect = el('btnDisconnect');
+const btnClear = el('btnClear');
+const btnCsv = el('btnCsv');
+const btnTheme = el('btnTheme');
 
-  const canvas = document.getElementById('plot');
-  const ctx = canvas.getContext('2d');
+const statusDot = el('statusDot');
+const statusText = el('statusText');
+const deviceNameEl = el('deviceName');
+const winSecondsEl = el('winSeconds');
+const autoScaleEl = el('autoScale');
+const uiError = el('uiError');
 
-  function setStatus(ok, msg) {
-    statusDot.classList.toggle('ok', !!ok);
-    statusDot.classList.toggle('bad', ok === false);
-    statusText.textContent = msg;
+const kpiRate = el('kpiRate');
+const kpiV = el('kpiV');
+const kpiT = el('kpiT');
+const kpiHex = el('kpiHex');
+
+const canvas = el('plot');
+const ctx = canvas?.getContext('2d');
+
+function showUiError(msg) {
+  if (!uiError) { alert(msg); return; }
+  uiError.style.display = 'inline';
+  uiError.textContent = msg;
+}
+
+function clearUiError() {
+  if (!uiError) return;
+  uiError.style.display = 'none';
+  uiError.textContent = '';
+}
+
+function setStatus(ok, msg) {
+  statusDot?.classList.toggle('ok', !!ok);
+  statusDot?.classList.toggle('bad', ok === false);
+  if (statusText) statusText.textContent = msg;
+}
+
+function supportsWebBluetooth() {
+  return !!navigator.bluetooth;
+}
+
+// Plot theme
+let plotTheme = 'dark';
+function applyPlotTheme() {
+  if (plotTheme === 'dark') {
+    document.documentElement.style.setProperty('--plot-bg', '#070b13');
+    document.documentElement.style.setProperty('--plot-grid', 'rgba(255,255,255,0.10)');
+    document.documentElement.style.setProperty('--plot-axis', 'rgba(255,255,255,0.20)');
+    document.documentElement.style.setProperty('--plot-text', 'rgba(255,255,255,0.78)');
+    document.documentElement.style.setProperty('--plot-trace', 'rgba(103,183,255,0.95)');
+    if (btnTheme) btnTheme.textContent = 'Plot: Dark';
+  } else {
+    document.documentElement.style.setProperty('--plot-bg', '#ffffff');
+    document.documentElement.style.setProperty('--plot-grid', 'rgba(0,0,0,0.12)');
+    document.documentElement.style.setProperty('--plot-axis', 'rgba(0,0,0,0.22)');
+    document.documentElement.style.setProperty('--plot-text', 'rgba(0,0,0,0.78)');
+    document.documentElement.style.setProperty('--plot-trace', 'rgba(10,60,140,0.95)');
+    if (btnTheme) btnTheme.textContent = 'Plot: Light';
   }
+  requestDraw();
+}
 
-  function supportsWebBluetooth() {
-    return !!navigator.bluetooth;
-  }
+// Data
+const session = { t: [], v: [] };
+let times = [];
+let volts = [];
+let startIdx = 0;
+let sampleTimesMs = [];
 
-  // ======= Theme toggle for plot only =======
-  let plotTheme = 'dark';
-  function applyPlotTheme() {
-    if (plotTheme === 'dark') {
-      document.documentElement.style.setProperty('--plot-bg', '#070b13');
-      document.documentElement.style.setProperty('--plot-grid', 'rgba(255,255,255,0.10)');
-      document.documentElement.style.setProperty('--plot-axis', 'rgba(255,255,255,0.20)');
-      document.documentElement.style.setProperty('--plot-text', 'rgba(255,255,255,0.75)');
-      document.documentElement.style.setProperty('--plot-trace', 'rgba(103,183,255,0.95)');
-      btnTheme.textContent = 'Plot: Dark';
-    } else {
-      document.documentElement.style.setProperty('--plot-bg', '#ffffff');
-      document.documentElement.style.setProperty('--plot-grid', 'rgba(0,0,0,0.12)');
-      document.documentElement.style.setProperty('--plot-axis', 'rgba(0,0,0,0.22)');
-      document.documentElement.style.setProperty('--plot-text', 'rgba(0,0,0,0.75)');
-      document.documentElement.style.setProperty('--plot-trace', 'rgba(10,60,140,0.95)');
-      btnTheme.textContent = 'Plot: Light';
-    }
-    requestDraw();
-  }
+// BLE
+let device = null;
+let server = null;
+let dataChar = null;
 
-  // ======= Data storage =======
-  // We keep two structures:
-  // 1) session arrays (for CSV download)
-  // 2) a sliding window buffer for plotting (index-based to avoid O(n) shifts)
-  const session = { t: [], v: [] };
+// Render throttle
+let drawPending = false;
+function requestDraw() {
+  if (drawPending || !ctx) return;
+  drawPending = true;
+  requestAnimationFrame(() => {
+    drawPending = false;
+    draw();
+  });
+}
 
-  let times = [];  // plot buffer times
-  let volts = [];  // plot buffer volts
-  let startIdx = 0; // start index of valid window range within times/volts
+function toHex(u8) {
+  let s = '';
+  for (const b of u8) s += b.toString(16).padStart(2,'0');
+  return s;
+}
 
-  // Rate estimate over last ~2 seconds (per sample, not per notification)
-  let sampleTimesMs = [];
+function addSample(t, v) {
+  session.t.push(t);
+  session.v.push(v);
 
-  // ======= BLE handles =======
-  let device = null;
-  let server = null;
-  let dataChar = null;
+  times.push(t);
+  volts.push(v);
 
-  // ======= Drawing: decouple BLE events from rendering =======
-  let drawPending = false;
-  function requestDraw() {
-    if (drawPending) return;
-    drawPending = true;
-    requestAnimationFrame(() => {
-      drawPending = false;
-      draw();
-    });
-  }
+  const winS = Math.max(1, Math.min(120, Number(winSecondsEl?.value || 10)));
+  const tMin = t - winS;
+  while (startIdx < times.length && times[startIdx] < tMin) startIdx++;
 
-  // Convert DataView to hex string
-  function toHex(u8) {
-    let s = '';
-    for (const b of u8) s += b.toString(16).padStart(2,'0');
-    return s;
-  }
-
-  function addSample(t, v) {
-    // Store full session (for CSV)
-    session.t.push(t);
-    session.v.push(v);
-
-    // Store plot buffer
-    times.push(t);
-    volts.push(v);
-
-    // Maintain window using startIdx pointer (no shifting)
-    const winS = Math.max(1, Math.min(120, Number(winSecondsEl.value || 10)));
-    const tMin = t - winS;
-    while (startIdx < times.length && times[startIdx] < tMin) startIdx++;
-
-    // Occasionally compact arrays to prevent unlimited growth
-    if (startIdx > 4000) {
-      times = times.slice(startIdx);
-      volts = volts.slice(startIdx);
-      startIdx = 0;
-    }
-
-    // Rate estimate (per sample)
-    const nowMs = performance.now();
-    sampleTimesMs.push(nowMs);
-    const cutoff = nowMs - 2000;
-    while (sampleTimesMs.length && sampleTimesMs[0] < cutoff) sampleTimesMs.shift();
-
-    // KPIs
-    const rate = sampleTimesMs.length / 2;
-    kpiRate.textContent = isFinite(rate) ? rate.toFixed(1) : '—';
-    kpiV.textContent = isFinite(v) ? v.toFixed(4) + ' V' : '—';
-    kpiT.textContent = isFinite(t) ? t.toFixed(3) + ' s' : '—';
-  }
-
-  function onNotification(event) {
-    const value = event.target.value;
-    if (!value || value.byteLength < 8) return;
-
-    // Show hex of last packet (for debug)
-    const bytes = new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
-    kpiHex.textContent = toHex(bytes);
-
-    // IMPORTANT: some firmwares pack multiple samples in one notification.
-    // Parse as N pairs of (float32 t, float32 v).
-    const n = Math.floor(value.byteLength / 8);
-    for (let i = 0; i < n; i++) {
-      const off = i * 8;
-      const t = value.getFloat32(off + 0, true);
-      const v = value.getFloat32(off + 4, true);
-      addSample(t, v);
-    }
-
-    // Draw at RAF (not on every notification)
-    requestDraw();
-  }
-
-  function clearData() {
-    session.t.length = 0;
-    session.v.length = 0;
-    times = [];
-    volts = [];
+  if (startIdx > 4000) {
+    times = times.slice(startIdx);
+    volts = volts.slice(startIdx);
     startIdx = 0;
-    sampleTimesMs = [];
-
-    kpiRate.textContent = '—';
-    kpiV.textContent = '—';
-    kpiT.textContent = '—';
-    kpiHex.textContent = '—';
-
-    draw(true);
   }
 
-  function downloadCSV() {
-    if (!session.t.length) {
-      alert('No data to export yet.');
-      return;
-    }
-    let lines = ['timestamp_s,voltage_V'];
-    for (let i = 0; i < session.t.length; i++) {
-      lines.push(`${session.t[i]},${session.v[i]}`);
-    }
-    const blob = new Blob([lines.join('
-')], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const ts = new Date().toISOString().replace(/[:.]/g,'-');
-    a.download = `ble_samples_${ts}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+  const nowMs = performance.now();
+  sampleTimesMs.push(nowMs);
+  const cutoff = nowMs - 2000;
+  while (sampleTimesMs.length && sampleTimesMs[0] < cutoff) sampleTimesMs.shift();
+
+  const rate = sampleTimesMs.length / 2;
+  if (kpiRate) kpiRate.textContent = isFinite(rate) ? rate.toFixed(1) : '—';
+  if (kpiV) kpiV.textContent = isFinite(v) ? v.toFixed(4) + ' V' : '—';
+  if (kpiT) kpiT.textContent = isFinite(t) ? t.toFixed(3) + ' s' : '—';
+}
+
+function onNotification(event) {
+  const dv = event?.target?.value;
+  if (!dv || dv.byteLength < 8) return;
+
+  const bytes = new Uint8Array(dv.buffer.slice(dv.byteOffset, dv.byteOffset + dv.byteLength));
+  if (kpiHex) kpiHex.textContent = toHex(bytes);
+
+  // Parse multiple samples packed into one notification (8 bytes per sample)
+  const n = Math.floor(dv.byteLength / 8);
+  for (let i = 0; i < n; i++) {
+    const off = i * 8;
+    const t = dv.getFloat32(off + 0, true);
+    const v = dv.getFloat32(off + 4, true);
+    addSample(t, v);
   }
 
-  function draw(clearOnly=false) {
-    const w = canvas.width;
-    const h = canvas.height;
-    const padL = 64;
-    const padR = 14;
-    const padT = 16;
-    const padB = 42;
+  requestDraw();
+}
 
-    // background
-    ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--plot-bg').trim();
-    ctx.fillRect(0, 0, w, h);
+function clearData() {
+  session.t.length = 0;
+  session.v.length = 0;
+  times = [];
+  volts = [];
+  startIdx = 0;
+  sampleTimesMs = [];
 
-    // If no data
-    const count = Math.max(0, times.length - startIdx);
-    if (clearOnly || count < 2) {
-      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--plot-text').trim();
-      ctx.font = '16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-      ctx.fillText('No data yet. Connect and start notifications…', 18, 34);
-      return;
-    }
+  if (kpiRate) kpiRate.textContent = '—';
+  if (kpiV) kpiV.textContent = '—';
+  if (kpiT) kpiT.textContent = '—';
+  if (kpiHex) kpiHex.textContent = '—';
 
-    const t0 = times[startIdx];
-    const t1 = times[times.length - 1];
+  draw(true);
+}
 
-    // Y scale
-    let vMin, vMax;
-    if (autoScaleEl.checked) {
-      vMin = Infinity; vMax = -Infinity;
-      for (let i = startIdx; i < volts.length; i++) {
-        const v = volts[i];
-        if (v < vMin) vMin = v;
-        if (v > vMax) vMax = v;
-      }
-      const span = (vMax - vMin);
-      const pad = (span * 0.12) || 0.02;
-      vMin -= pad;
-      vMax += pad;
-    } else {
-      vMin = 0.0;
-      vMax = 3.3;
-    }
-    if (vMax - vMin < 1e-9) vMax = vMin + 1e-6;
-    if (t1 - t0 < 1e-9) return;
+function downloadCSV() {
+  if (!session.t.length) { alert('No data to export yet.'); return; }
+  const lines = ['timestamp_s,voltage_V'];
+  for (let i = 0; i < session.t.length; i++) lines.push(`${session.t[i]},${session.v[i]}`);
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const ts = new Date().toISOString().replace(/[:.]/g,'-');
+  a.download = `ble_samples_${ts}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
-    const plotW = w - padL - padR;
-    const plotH = h - padT - padB;
+function draw(clearOnly=false) {
+  if (!ctx || !canvas) return;
 
-    // Grid
-    const grid = getComputedStyle(document.documentElement).getPropertyValue('--plot-grid').trim();
-    ctx.strokeStyle = grid;
-    ctx.lineWidth = 1;
+  const w = canvas.width;
+  const h = canvas.height;
+  const padL = 64, padR = 14, padT = 16, padB = 42;
 
-    // horizontal ticks (voltage)
-    const yTicks = 5;
-    for (let i = 0; i <= yTicks; i++) {
-      const y = padT + (plotH * i) / yTicks;
-      ctx.beginPath();
-      ctx.moveTo(padL, y);
-      ctx.lineTo(padL + plotW, y);
-      ctx.stroke();
-    }
+  const css = getComputedStyle(document.documentElement);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = css.getPropertyValue('--plot-bg').trim();
+  ctx.fillRect(0, 0, w, h);
 
-    // vertical ticks (time)
-    const xTicks = 5;
-    for (let i = 0; i <= xTicks; i++) {
-      const x = padL + (plotW * i) / xTicks;
-      ctx.beginPath();
-      ctx.moveTo(x, padT);
-      ctx.lineTo(x, padT + plotH);
-      ctx.stroke();
-    }
+  const count = Math.max(0, times.length - startIdx);
+  const txt = css.getPropertyValue('--plot-text').trim();
 
-    // Axes
-    const axis = getComputedStyle(document.documentElement).getPropertyValue('--plot-axis').trim();
-    ctx.strokeStyle = axis;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(padL, padT);
-    ctx.lineTo(padL, padT + plotH);
-    ctx.lineTo(padL + plotW, padT + plotH);
-    ctx.stroke();
-
-    // Labels
-    const txt = getComputedStyle(document.documentElement).getPropertyValue('--plot-text').trim();
+  if (clearOnly || count < 2) {
     ctx.fillStyle = txt;
-    ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
-
-    // Y labels
-    for (let i = 0; i <= yTicks; i++) {
-      const frac = 1 - (i / yTicks);
-      const v = vMin + frac * (vMax - vMin);
-      const y = padT + (plotH * i) / yTicks;
-      ctx.fillText(v.toFixed(3), 10, y + 4);
-    }
-    ctx.fillText('Voltage (V)', 10, 14);
-
-    // X labels
-    for (let i = 0; i <= xTicks; i++) {
-      const frac = i / xTicks;
-      const t = t0 + frac * (t1 - t0);
-      const x = padL + (plotW * i) / xTicks;
-      ctx.fillText(t.toFixed(2), x - 12, padT + plotH + 22);
-    }
-    ctx.fillText('Time (s)', padL + plotW - 70, padT + plotH + 38);
-
-    // Trace
-    const trace = getComputedStyle(document.documentElement).getPropertyValue('--plot-trace').trim();
-    ctx.strokeStyle = trace;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-
-    // If too many points, decimate for drawing only (keeps ALL samples stored)
-    const maxDrawPoints = Math.min(4000, count);
-    const step = Math.max(1, Math.floor(count / maxDrawPoints));
-
-    let first = true;
-    for (let i = startIdx; i < times.length; i += step) {
-      const x = padL + ((times[i] - t0) / (t1 - t0)) * plotW;
-      const y = padT + (1 - (volts[i] - vMin) / (vMax - vMin)) * plotH;
-      if (first) { ctx.moveTo(x, y); first = false; }
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-
-    // Window annotation
-    ctx.fillStyle = txt;
-    ctx.fillText(`Window: ${(t1 - t0).toFixed(2)} s • Points: ${count} (draw step=${step})`, padL, 14);
+    ctx.font = '16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+    ctx.fillText('No data yet. Connect and start notifications…', 18, 34);
+    return;
   }
 
-  async function disconnect() {
-    try {
-      if (dataChar) {
-        try { await dataChar.stopNotifications(); } catch (_) {}
-        dataChar.removeEventListener('characteristicvaluechanged', onNotification);
-      }
-    } finally {
-      dataChar = null;
-      server = null;
-      if (device && device.gatt && device.gatt.connected) device.gatt.disconnect();
+  const t0 = times[startIdx];
+  const t1 = times[times.length - 1];
+
+  let vMin, vMax;
+  if (autoScaleEl?.checked) {
+    vMin = Infinity; vMax = -Infinity;
+    for (let i = startIdx; i < volts.length; i++) {
+      const v = volts[i];
+      if (v < vMin) vMin = v;
+      if (v > vMax) vMax = v;
+    }
+    const span = (vMax - vMin);
+    const pad = (span * 0.12) || 0.02;
+    vMin -= pad; vMax += pad;
+  } else {
+    vMin = 0.0; vMax = 3.3;
+  }
+  if (vMax - vMin < 1e-9) vMax = vMin + 1e-6;
+  if (t1 - t0 < 1e-9) return;
+
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+
+  // Grid
+  ctx.strokeStyle = css.getPropertyValue('--plot-grid').trim();
+  ctx.lineWidth = 1;
+
+  const yTicks = 5;
+  for (let i = 0; i <= yTicks; i++) {
+    const y = padT + (plotH * i) / yTicks;
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(padL + plotW, y);
+    ctx.stroke();
+  }
+
+  const xTicks = 5;
+  for (let i = 0; i <= xTicks; i++) {
+    const x = padL + (plotW * i) / xTicks;
+    ctx.beginPath();
+    ctx.moveTo(x, padT);
+    ctx.lineTo(x, padT + plotH);
+    ctx.stroke();
+  }
+
+  // Axes
+  ctx.strokeStyle = css.getPropertyValue('--plot-axis').trim();
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT);
+  ctx.lineTo(padL, padT + plotH);
+  ctx.lineTo(padL + plotW, padT + plotH);
+  ctx.stroke();
+
+  // Labels
+  ctx.fillStyle = txt;
+  ctx.font = '13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+
+  for (let i = 0; i <= yTicks; i++) {
+    const frac = 1 - (i / yTicks);
+    const v = vMin + frac * (vMax - vMin);
+    const y = padT + (plotH * i) / yTicks;
+    ctx.fillText(v.toFixed(3), 10, y + 4);
+  }
+  ctx.fillText('Voltage (V)', 10, 14);
+
+  for (let i = 0; i <= xTicks; i++) {
+    const frac = i / xTicks;
+    const t = t0 + frac * (t1 - t0);
+    const x = padL + (plotW * i) / xTicks;
+    ctx.fillText(t.toFixed(2), x - 12, padT + plotH + 22);
+  }
+  ctx.fillText('Time (s)', padL + plotW - 70, padT + plotH + 38);
+
+  // Trace
+  ctx.strokeStyle = css.getPropertyValue('--plot-trace').trim();
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+
+  const maxDrawPoints = Math.min(4000, count);
+  const step = Math.max(1, Math.floor(count / maxDrawPoints));
+
+  let first = true;
+  for (let i = startIdx; i < times.length; i += step) {
+    const x = padL + ((times[i] - t0) / (t1 - t0)) * plotW;
+    const y = padT + (1 - (volts[i] - vMin) / (vMax - vMin)) * plotH;
+    if (first) { ctx.moveTo(x, y); first = false; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  ctx.fillStyle = txt;
+  ctx.fillText(`Window: ${(t1 - t0).toFixed(2)} s • Points: ${count} (draw step=${step})`, padL, 14);
+}
+
+async function disconnect() {
+  try {
+    if (dataChar) {
+      try { await dataChar.stopNotifications(); } catch (_) {}
+      dataChar.removeEventListener('characteristicvaluechanged', onNotification);
+    }
+  } finally {
+    dataChar = null;
+    server = null;
+    if (device && device.gatt && device.gatt.connected) device.gatt.disconnect();
+    setStatus(false, 'Disconnected');
+    if (btnDisconnect) btnDisconnect.disabled = true;
+    if (btnConnect) btnConnect.disabled = false;
+    if (deviceNameEl) deviceNameEl.textContent = '—';
+  }
+}
+
+async function connect() {
+  clearUiError();
+
+  if (!supportsWebBluetooth()) {
+    showUiError('Web Bluetooth not supported (use Android Chrome/Edge).');
+    return;
+  }
+
+  // Must be user-gesture initiated
+  clearData();
+
+  try {
+    setStatus(null, 'Opening device picker…');
+
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERVICE_UUID] }],
+      optionalServices: [SERVICE_UUID]
+    });
+
+    if (deviceNameEl) deviceNameEl.textContent = device.name || '(unnamed)';
+
+    device.addEventListener('gattserverdisconnected', () => {
       setStatus(false, 'Disconnected');
-      btnDisconnect.disabled = true;
-      btnConnect.disabled = false;
-      deviceNameEl.textContent = '—';
-    }
+      if (btnDisconnect) btnDisconnect.disabled = true;
+      if (btnConnect) btnConnect.disabled = false;
+    });
+
+    setStatus(null, 'Connecting…');
+    server = await device.gatt.connect();
+
+    setStatus(null, 'Discovering services…');
+    const service = await server.getPrimaryService(SERVICE_UUID);
+
+    setStatus(null, 'Subscribing…');
+    dataChar = await service.getCharacteristic(DATA_CHAR_UUID);
+
+    await dataChar.startNotifications();
+    dataChar.addEventListener('characteristicvaluechanged', onNotification);
+
+    setStatus(true, 'Connected + streaming');
+    if (btnDisconnect) btnDisconnect.disabled = false;
+    if (btnConnect) btnConnect.disabled = true;
+
+    requestDraw();
+  } catch (err) {
+    console.error(err);
+    setStatus(false, 'Error');
+    showUiError('Connect failed: ' + (err?.message || err));
+    if (btnDisconnect) btnDisconnect.disabled = true;
+    if (btnConnect) btnConnect.disabled = false;
+    await disconnect();
+  }
+}
+
+function bindOrError() {
+  const missing = [];
+  if (!btnConnect) missing.push('#btnConnect');
+  if (!btnDisconnect) missing.push('#btnDisconnect');
+  if (!canvas || !ctx) missing.push('#plot');
+  if (missing.length) {
+    showUiError('UI missing: ' + missing.join(', '));
+    return;
   }
 
-  async function connect() {
-    if (!supportsWebBluetooth()) {
-      alert('Web Bluetooth not supported in this browser. Use Chrome/Edge on Android.');
-      return;
-    }
-
-    clearData();
-
-    try {
-      setStatus(null, 'Opening device picker…');
-
-      device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: [SERVICE_UUID] }],
-        optionalServices: [SERVICE_UUID]
-      });
-
-      deviceNameEl.textContent = device.name || '(unnamed)';
-      device.addEventListener('gattserverdisconnected', () => {
-        setStatus(false, 'Disconnected');
-        btnDisconnect.disabled = true;
-        btnConnect.disabled = false;
-      });
-
-      setStatus(null, 'Connecting…');
-      server = await device.gatt.connect();
-
-      setStatus(null, 'Discovering services…');
-      const service = await server.getPrimaryService(SERVICE_UUID);
-
-      setStatus(null, 'Subscribing…');
-      dataChar = await service.getCharacteristic(DATA_CHAR_UUID);
-      await dataChar.startNotifications();
-      dataChar.addEventListener('characteristicvaluechanged', onNotification);
-
-      setStatus(true, 'Connected + streaming');
-      btnDisconnect.disabled = false;
-      btnConnect.disabled = true;
-
-      requestDraw();
-    } catch (err) {
-      console.error(err);
-      setStatus(false, 'Error');
-      btnDisconnect.disabled = true;
-      btnConnect.disabled = false;
-      alert('BLE connect failed: ' + (err?.message || err));
-      await disconnect();
-    }
-  }
-
-  // Buttons
   btnConnect.addEventListener('click', connect);
+  btnConnect.onclick = connect;
+
   btnDisconnect.addEventListener('click', disconnect);
-  btnClear.addEventListener('click', clearData);
-  btnCsv.addEventListener('click', downloadCSV);
-  btnTheme.addEventListener('click', () => {
+  btnDisconnect.onclick = disconnect;
+
+  btnClear?.addEventListener('click', clearData);
+  if (btnClear) btnClear.onclick = clearData;
+
+  btnCsv?.addEventListener('click', downloadCSV);
+  if (btnCsv) btnCsv.onclick = downloadCSV;
+
+  btnTheme?.addEventListener('click', () => {
     plotTheme = (plotTheme === 'dark') ? 'light' : 'dark';
     applyPlotTheme();
   });
 
-  // Initial render
-  applyPlotTheme();
   setStatus(false, 'Disconnected');
+  applyPlotTheme();
   draw(true);
-})();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bindOrError);
+} else {
+  bindOrError();
+}
 </script>
 </body>
 </html>
