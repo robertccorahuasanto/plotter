@@ -19,8 +19,10 @@
       --plot-grid: rgba(255,255,255,0.10);
       --plot-axis: rgba(255,255,255,0.20);
       --plot-text: rgba(255,255,255,0.75);
-      --plot-trace: rgba(103,183,255,0.95); /* device #1 */
-      --plot-trace2: rgba(255, 80, 80, 0.95); /* device #2 (RED) */
+
+      /* Traces */
+      --plot-trace: rgba(103,183,255,0.95);      /* device #1 */
+      --plot-trace2: rgba(255, 80, 80, 0.95);    /* device #2 (RED) */
     }
 
     body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--bg); color: var(--text); }
@@ -67,7 +69,7 @@
 <body>
   <header>
     <h1>BLE Live Plotter (ANNA-B112)</h1>
-    <p>Two-device Web Bluetooth realtime overlay + baseline-removed plot + CSV export. Parses <span class="mono">(timestamp, voltage)</span> float32 pairs.</p>
+    <p>Two-device Web Bluetooth realtime overlay + rolling baseline+norm processed plot + CSV export. Parses <span class="mono">(timestamp, voltage)</span> float32 pairs.</p>
   </header>
 
   <main>
@@ -82,6 +84,8 @@
 
           <button id="btnConnect2" class="primary" type="button">Connect #2</button>
           <button id="btnDisconnect2" class="danger" type="button" disabled>Disconnect #2</button>
+
+          <button id="btnResetTime" type="button">Reset timebase (both)</button>
 
           <span class="pill"><span id="statusDot" class="dot"></span><span id="statusText" class="small">Disconnected</span></span>
           <span class="pill"><span class="small">Device:</span><span id="deviceName" class="mono small">—</span></span>
@@ -109,7 +113,7 @@
       </div>
 
       <!-- Processed plot -->
-      <div class="small" style="margin-top:12px; margin-bottom:6px;">Processed (baseline removed, shifted to ≥ 0, normalized 0→1)</div>
+      <div class="small" style="margin-top:12px; margin-bottom:6px;">Processed (per-device rolling baseline + rolling robust normalization to 0–1)</div>
       <canvas id="plotProc" width="1400" height="320" style="height:260px;"></canvas>
     </div>
 
@@ -138,15 +142,16 @@
 
         <div class="small" style="line-height:1.55;">
           <div style="font-weight:700; margin-bottom:6px;">Notes</div>
-          • We plot each device on a <span class="mono">local timebase</span> (seconds since first packet received per device), so overlays work even if both devices transmit timestamps starting at 0.<br/>
+          • We plot each device on a <span class="mono">local timebase</span> (seconds since first packet received per device). Use “Reset timebase” to re-zero both at once.<br/>
+          • Processed plot uses per-device rolling stats (baseline window 2 s, normalization window 5 s, robust 10–90% percentiles).<br/>
           • Android: Chrome/Edge works. Must be served from <span class="mono">https://</span> or <span class="mono">http://localhost</span>. iOS Safari: no Web Bluetooth.
         </div>
       </div>
 
       <div class="card">
         <div class="small" style="line-height:1.55;">
-          <div style="font-weight:700; margin-bottom:6px;">Baseline removal</div>
-          Baseline is computed as the <span class="mono">median</span> of the last ~2 seconds of samples (robust vs drift/outliers). Then we subtract it and shift so all processed values are ≥ 0. Finally we normalize to 0–1.
+          <div style="font-weight:700; margin-bottom:6px;">Processing</div>
+          Baseline: median of last ~2 s. Normalization: robust 10–90% range of last ~5 s (after baseline removal), clamped to 0–1.
         </div>
       </div>
     </div>
@@ -162,6 +167,7 @@ const btnConnect1 = el('btnConnect1');
 const btnDisconnect1 = el('btnDisconnect1');
 const btnConnect2 = el('btnConnect2');
 const btnDisconnect2 = el('btnDisconnect2');
+const btnResetTime = el('btnResetTime');
 
 const btnClear = el('btnClear');
 const btnCsv = el('btnCsv');
@@ -214,7 +220,7 @@ function applyPlotTheme() {
     document.documentElement.style.setProperty('--plot-axis', 'rgba(255,255,255,0.20)');
     document.documentElement.style.setProperty('--plot-text', 'rgba(255,255,255,0.78)');
     document.documentElement.style.setProperty('--plot-trace', 'rgba(103,183,255,0.95)');   // dev1
-    document.documentElement.style.setProperty('--plot-trace2', 'rgba(255,80,80,0.95)');   // dev2 (RED)
+    document.documentElement.style.setProperty('--plot-trace2', 'rgba(255,80,80,0.95)');   // dev2
     if (btnTheme) btnTheme.textContent = 'Plot: Dark';
   } else {
     document.documentElement.style.setProperty('--plot-bg', '#ffffff');
@@ -222,7 +228,7 @@ function applyPlotTheme() {
     document.documentElement.style.setProperty('--plot-axis', 'rgba(0,0,0,0.22)');
     document.documentElement.style.setProperty('--plot-text', 'rgba(0,0,0,0.78)');
     document.documentElement.style.setProperty('--plot-trace', 'rgba(10,60,140,0.95)');    // dev1
-    document.documentElement.style.setProperty('--plot-trace2', 'rgba(200,0,0,0.95)');      // dev2 (RED)
+    document.documentElement.style.setProperty('--plot-trace2', 'rgba(200,0,0,0.95)');      // dev2
     if (btnTheme) btnTheme.textContent = 'Plot: Light';
   }
   requestDraw();
@@ -236,10 +242,12 @@ const dev = Array.from({length: DEV_N}, () => ({
   dataChar: null,
   handler: null,
 
-  // session storage (CSV)
+  // session storage (CSV) raw volts + derived processed values captured at ingest-time
   sessionLocalT: [],
   sessionRawT: [],
   sessionV: [],
+  sessionProc: [],   // baseline removed (rolling, per-device)
+  sessionNorm: [],   // normalized 0..1 (rolling, per-device)
 
   // rolling for plot (local timebase)
   times: [],
@@ -253,6 +261,77 @@ const dev = Array.from({length: DEV_N}, () => ({
   lastV: NaN,
 }));
 
+// --- processing parameters (per device, rolling) ---
+const BASELINE_WIN_S = 2.0; // baseline = median of last N seconds
+const NORM_WIN_S = 5.0;     // normalization computed from last N seconds
+const NORM_Q_LO = 0.10;     // robust percentiles
+const NORM_Q_HI = 0.90;
+
+function toHex(u8) {
+  let s = '';
+  for (const b of u8) s += b.toString(16).padStart(2,'0');
+  return s;
+}
+
+function median(arr) {
+  if (!arr.length) return NaN;
+  const a = arr.slice().sort((x,y)=>x-y);
+  const m = Math.floor(a.length/2);
+  return (a.length % 2) ? a[m] : (a[m-1] + a[m]) / 2;
+}
+
+function quantile(sortedArr, q) {
+  const n = sortedArr.length;
+  if (!n) return NaN;
+  const pos = (n - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  if (sortedArr[base + 1] === undefined) return sortedArr[base];
+  return sortedArr[base] + rest * (sortedArr[base + 1] - sortedArr[base]);
+}
+function clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
+
+function rollingBaseline(di, t1) {
+  const d = dev[di];
+  const tMin = t1 - BASELINE_WIN_S;
+  const slice = [];
+  for (let i = d.times.length - 1; i >= d.startIdx; i--) {
+    if (d.times[i] < tMin) break;
+    slice.push(d.volts[i]);
+  }
+  const b = median(slice);
+  return isFinite(b) ? b : 0;
+}
+
+function rollingNormParams(di, t1, base) {
+  const d = dev[di];
+  const tMin = t1 - NORM_WIN_S;
+  const slice = [];
+  for (let i = d.times.length - 1; i >= d.startIdx; i--) {
+    if (d.times[i] < tMin) break;
+    const p = d.volts[i] - base;
+    if (isFinite(p)) slice.push(p);
+  }
+  slice.sort((a,b)=>a-b);
+
+  // robust lo/hi
+  let lo = quantile(slice, NORM_Q_LO);
+  let hi = quantile(slice, NORM_Q_HI);
+
+  let denom = hi - lo;
+  if (!isFinite(lo) || !isFinite(hi) || Math.abs(denom) < 1e-9) {
+    // fallback to min/max of slice
+    const mn = slice.length ? slice[0] : 0;
+    const mx = slice.length ? slice[slice.length - 1] : 1;
+    lo = isFinite(mn) ? mn : 0;
+    hi = isFinite(mx) ? mx : 1;
+    denom = hi - lo;
+  }
+  if (!isFinite(denom) || Math.abs(denom) < 1e-9) denom = 1;
+
+  return { lo, denom };
+}
+
 // Render throttle
 let drawPending = false;
 function requestDraw() {
@@ -265,40 +344,43 @@ function requestDraw() {
   });
 }
 
-function toHex(u8) {
-  let s = '';
-  for (const b of u8) s += b.toString(16).padStart(2,'0');
-  return s;
-}
-
 function addSample(idx, tRaw, v) {
   const d = dev[idx];
   const nowMs = performance.now();
   if (d.t0LocalMs === null) d.t0LocalMs = nowMs;
   const tLocal = (nowMs - d.t0LocalMs) / 1000.0;
 
-  // session
-  d.sessionLocalT.push(tLocal);
-  d.sessionRawT.push(tRaw);
-  d.sessionV.push(v);
-
-  // rolling plot
+  // rolling plot storage
   d.times.push(tLocal);
   d.volts.push(v);
 
-  d.lastLocalT = tLocal;
-  d.lastV = v;
-
-  // maintain window
+  // maintain window indices (for drawing window)
   const winS = Math.max(1, Math.min(120, Number(winSecondsEl?.value || 10)));
-  const tMin = tLocal - winS;
-  while (d.startIdx < d.times.length && d.times[d.startIdx] < tMin) d.startIdx++;
+  const tMinPlot = tLocal - winS;
+  while (d.startIdx < d.times.length && d.times[d.startIdx] < tMinPlot) d.startIdx++;
 
+  // prevent unbounded growth
   if (d.startIdx > 4000) {
     d.times = d.times.slice(d.startIdx);
     d.volts = d.volts.slice(d.startIdx);
     d.startIdx = 0;
   }
+
+  // per-device rolling baseline + rolling robust normalization (computed on RECENT window only)
+  const base = rollingBaseline(idx, tLocal);
+  const proc = v - base; // baseline removed
+  const np = rollingNormParams(idx, tLocal, base);
+  const norm = clamp01((proc - np.lo) / np.denom);
+
+  // session (CSV) store BOTH raw + processed + normalized per sample
+  d.sessionLocalT.push(tLocal);
+  d.sessionRawT.push(tRaw);
+  d.sessionV.push(v);
+  d.sessionProc.push(proc);
+  d.sessionNorm.push(norm);
+
+  d.lastLocalT = tLocal;
+  d.lastV = v;
 
   // sample rate estimate
   d.sampleTimesMs.push(nowMs);
@@ -330,7 +412,6 @@ function onNotificationFactory(idx) {
 
 function updateKPIs(activeIdx) {
   const d = dev[activeIdx];
-
   const rate = (d.sampleTimesMs.length / 2);
   if (kpiRate) kpiRate.textContent = isFinite(rate) ? rate.toFixed(1) : '—';
   if (kpiV) kpiV.textContent = isFinite(d.lastV) ? d.lastV.toFixed(4) + ' V' : '—';
@@ -346,9 +427,12 @@ function updateKPIs(activeIdx) {
 function clearData() {
   for (let i = 0; i < DEV_N; i++) {
     const d = dev[i];
+
     d.sessionLocalT.length = 0;
     d.sessionRawT.length = 0;
     d.sessionV.length = 0;
+    d.sessionProc.length = 0;
+    d.sessionNorm.length = 0;
 
     d.times = [];
     d.volts = [];
@@ -371,47 +455,61 @@ function clearData() {
   drawProcessed(true);
 }
 
-function median(arr) {
-  if (!arr.length) return NaN;
-  const a = arr.slice().sort((x,y)=>x-y);
-  const m = Math.floor(a.length/2);
-  return (a.length % 2) ? a[m] : (a[m-1] + a[m]) / 2;
-}
-
-// baseline = median of last ~2 seconds in current window
-function baselineMedianLast2s(idx, t1Local) {
-  const d = dev[idx];
-  const tMin = t1Local - 2.0;
-  const slice = [];
-  for (let i = d.times.length - 1; i >= d.startIdx; i--) {
-    if (d.times[i] < tMin) break;
-    slice.push(d.volts[i]);
+// Reset timebase for BOTH devices at once (does NOT clear data)
+function resetTimebaseBoth() {
+  const now = performance.now();
+  for (let i = 0; i < DEV_N; i++) {
+    const d = dev[i];
+    if (d.device) {
+      // Set a new origin so future samples start near t=0
+      d.t0LocalMs = now;
+    }
   }
-  return median(slice);
+  // optionally you might want to clear rolling arrays so overlay is clean; but user asked only reset timestamps.
+  requestDraw();
 }
 
 function downloadCSV() {
-  const total = dev[0].sessionLocalT.length + dev[1].sessionLocalT.length;
-  if (!total) { alert('No data to export yet.'); return; }
+  // Export as aligned rows with columns per device:
+  // time1, rawV1, proc1, norm1, time2, rawV2, proc2, norm2 (+ raw_time if you want)
+  const n1 = dev[0].sessionLocalT.length;
+  const n2 = dev[1].sessionLocalT.length;
+  const n = Math.max(n1, n2);
+  if (!n) { alert('No data to export yet.'); return; }
 
-  const lines = ['device,local_time_s,raw_time_s,voltage_V,processed_V'];
+  const name1 = dev[0].device?.name || 'dev1';
+  const name2 = dev[1].device?.name || 'dev2';
 
-  for (let i = 0; i < DEV_N; i++) {
-    const d = dev[i];
-    const name = d.device?.name || `dev${i+1}`;
+  const header = [
+    `${name1}_local_time_s`, `${name1}_raw_time_s`, `${name1}_voltage_V`, `${name1}_proc_baselineRemoved`, `${name1}_norm_0_1`,
+    `${name2}_local_time_s`, `${name2}_raw_time_s`, `${name2}_voltage_V`, `${name2}_proc_baselineRemoved`, `${name2}_norm_0_1`,
+  ];
+  const lines = [header.join(',')];
 
-    // baseline for CSV: use baseline from last point's time
-    const t1 = d.sessionLocalT.length ? d.sessionLocalT[d.sessionLocalT.length - 1] : 0;
-    const base = isFinite(t1) ? baselineMedianLast2s(i, t1) : 0;
+  function cell(x) {
+    if (x === null || x === undefined) return '';
+    if (typeof x === 'number') return (isFinite(x) ? String(x) : '');
+    return String(x).replace(/"/g,'""');
+  }
 
-    for (let k = 0; k < d.sessionLocalT.length; k++) {
-      const tLocal = d.sessionLocalT[k];
-      const tRaw = d.sessionRawT[k];
-      const v = d.sessionV[k];
-      let p = v - base;
-      if (!isFinite(p)) p = 0;
-      lines.push(`${name},${tLocal},${tRaw},${v},${p}`);
-    }
+  for (let i = 0; i < n; i++) {
+    const row = [];
+
+    // dev1
+    row.push(cell(dev[0].sessionLocalT[i]));
+    row.push(cell(dev[0].sessionRawT[i]));
+    row.push(cell(dev[0].sessionV[i]));
+    row.push(cell(dev[0].sessionProc[i]));
+    row.push(cell(dev[0].sessionNorm[i]));
+
+    // dev2
+    row.push(cell(dev[1].sessionLocalT[i]));
+    row.push(cell(dev[1].sessionRawT[i]));
+    row.push(cell(dev[1].sessionV[i]));
+    row.push(cell(dev[1].sessionProc[i]));
+    row.push(cell(dev[1].sessionNorm[i]));
+
+    lines.push(row.join(','));
   }
 
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
@@ -419,7 +517,7 @@ function downloadCSV() {
   const a = document.createElement('a');
   a.href = url;
   const ts = new Date().toISOString().replace(/[:.]/g,'-');
-  a.download = `ble_samples_${ts}.csv`;
+  a.download = `ble_samples_aligned_${ts}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -478,7 +576,7 @@ function drawAxes(ctxX, w, h, padL, padR, padT, padB, t0, t1, vMin, vMax, title)
     const y = padT + (plotH * i) / yTicks;
     ctxX.fillText(v.toFixed(3), 10, y + 4);
   }
-  ctxX.fillText('Voltage (V)', 10, 14);
+  ctxX.fillText('Voltage', 10, 14);
 
   for (let i = 0; i <= xTicks; i++) {
     const frac = i / xTicks;
@@ -491,7 +589,7 @@ function drawAxes(ctxX, w, h, padL, padR, padT, padB, t0, t1, vMin, vMax, title)
   ctxX.fillText(title, padL, 14);
 }
 
-/* UPDATED: per-device color + solid line (no dashed) */
+// solid trace, per-device color
 function drawTrace(ctxX, padL, padT, plotW, plotH, t0, t1, vMin, vMax, timesArr, voltsArr, startIdx, colorCssVar) {
   const count = timesArr.length - startIdx;
   if (count < 2) return;
@@ -500,7 +598,7 @@ function drawTrace(ctxX, padL, padT, plotW, plotH, t0, t1, vMin, vMax, timesArr,
   ctxX.save();
   ctxX.strokeStyle = css.getPropertyValue(colorCssVar).trim();
   ctxX.lineWidth = 2;
-  ctxX.setLineDash([]); // ALWAYS solid
+  ctxX.setLineDash([]); // solid
 
   const maxDrawPoints = Math.min(4000, count);
   const step = Math.max(1, Math.floor(count / maxDrawPoints));
@@ -539,7 +637,6 @@ function drawOverlay(clearOnly=false) {
     return;
   }
 
-  // Shared time window on local timebase
   const t1 = Math.max(
     has0 ? dev[0].times[dev[0].times.length - 1] : -Infinity,
     has1 ? dev[1].times[dev[1].times.length - 1] : -Infinity
@@ -604,76 +701,52 @@ function drawProcessed(clearOnly=false) {
   const winS = Math.max(1, Math.min(120, Number(winSecondsEl?.value || 10)));
   const t0 = t1 - winS;
 
-  // baselines per device
-  const b0 = has0 ? baselineMedianLast2s(0, t1) : 0;
-  const b1 = has1 ? baselineMedianLast2s(1, t1) : 0;
-
-  // processed min/max in window (after baseline removal + shift)
-  let pMin = Infinity, pMax = -Infinity;
-  for (let di = 0; di < DEV_N; di++) {
-    const d = dev[di];
-    const base = (di === 0) ? b0 : b1;
-    for (let i = d.times.length - 1; i >= d.startIdx; i--) {
-      if (d.times[i] < t0) break;
-      const p = d.volts[i] - base;
-      if (p < pMin) pMin = p;
-      if (p > pMax) pMax = p;
-    }
-  }
-  if (!isFinite(pMin) || !isFinite(pMax)) { pMin = 0; pMax = 1; }
-
-  // shift to >= 0
-  const shift = (pMin < 0) ? -pMin : 0;
-
-  // NEW: normalize to [0,1] using windowed min/max AFTER shift
-  const shiftedMin = 0;
-  const shiftedMax = (pMax + shift);
-  const denom = (shiftedMax - shiftedMin);
-  const safeDenom = (Math.abs(denom) < 1e-12) ? 1 : denom;
-
-  const vMin = 0;
-  const vMax = 1;
-
-  drawAxes(ctxProc, w, h, padL, padR, padT, padB, t0, t1, vMin, vMax, 'Processed (baseline removed, shifted ≥ 0, normalized 0–1)');
+  // axes fixed 0..1 because we normalize
+  drawAxes(ctxProc, w, h, padL, padR, padT, padB, t0, t1, 0, 1, 'Processed (per-device rolling baseline + rolling norm 0–1)');
   const plotW = w - padL - padR;
   const plotH = h - padT - padB;
 
-  function drawProc(di, colorCssVar) {
+  function drawNorm(di, colorCssVar) {
     const d = dev[di];
-    const base = (di === 0) ? b0 : b1;
     const count = d.times.length - d.startIdx;
     if (count < 2) return;
+
+    // compute current rolling params (per-device)
+    const base = rollingBaseline(di, t1);
+    const np = rollingNormParams(di, t1, base);
 
     const css = getComputedStyle(document.documentElement);
     ctxProc.save();
     ctxProc.strokeStyle = css.getPropertyValue(colorCssVar).trim();
     ctxProc.lineWidth = 2;
-    ctxProc.setLineDash([]); // solid
+    ctxProc.setLineDash([]);
 
     const maxDrawPoints = Math.min(4000, count);
     const step = Math.max(1, Math.floor(count / maxDrawPoints));
 
     ctxProc.beginPath();
     let first = true;
+
     for (let i = d.startIdx; i < d.times.length; i += step) {
       const tt = d.times[i];
       if (tt < t0) continue;
 
-      const shifted = (d.volts[i] - base) + shift;     // >= 0
-      const norm = (shifted - shiftedMin) / safeDenom; // 0..1
+      const proc = d.volts[i] - base;
+      const norm = clamp01((proc - np.lo) / np.denom);
 
       const x = padL + ((tt - t0) / (t1 - t0)) * plotW;
-      const y = padT + (1 - (norm - vMin) / (vMax - vMin)) * plotH;
+      const y = padT + (1 - norm) * plotH;
 
       if (first) { ctxProc.moveTo(x, y); first = false; }
       else ctxProc.lineTo(x, y);
     }
+
     ctxProc.stroke();
     ctxProc.restore();
   }
 
-  if (has0) drawProc(0, '--plot-trace');
-  if (has1) drawProc(1, '--plot-trace2');
+  if (has0) drawNorm(0, '--plot-trace');
+  if (has1) drawNorm(1, '--plot-trace2');
 }
 
 async function disconnectIdx(idx) {
@@ -743,7 +816,6 @@ async function connectIdx(idx) {
     setStatus(true, `Connected (#${idx+1}) + streaming`);
     updateButtons();
 
-    // refresh device label
     updateKPIs(idx);
     requestDraw();
   } catch (err) {
@@ -761,6 +833,7 @@ function bindOrError() {
   if (!btnDisconnect1) missing.push('#btnDisconnect1');
   if (!btnConnect2) missing.push('#btnConnect2');
   if (!btnDisconnect2) missing.push('#btnDisconnect2');
+  if (!btnResetTime) missing.push('#btnResetTime');
   if (!canvas || !ctx) missing.push('#plot');
   if (!canvasProc || !ctxProc) missing.push('#plotProc');
   if (missing.length) {
@@ -772,6 +845,8 @@ function bindOrError() {
   btnDisconnect1.onclick = () => disconnectIdx(0);
   btnConnect2.onclick = () => connectIdx(1);
   btnDisconnect2.onclick = () => disconnectIdx(1);
+
+  btnResetTime.onclick = resetTimebaseBoth;
 
   btnClear.onclick = clearData;
   btnCsv.onclick = downloadCSV;
