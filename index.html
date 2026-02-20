@@ -73,7 +73,6 @@
   </header>
 
   <main>
-    <!-- PLOT FIRST (on top) -->
     <div class="card">
       <canvas id="plot" width="1400" height="480" style="height:360px;"></canvas>
 
@@ -85,7 +84,7 @@
           <button id="btnConnect2" class="primary" type="button">Connect #2</button>
           <button id="btnDisconnect2" class="danger" type="button" disabled>Disconnect #2</button>
 
-          <button id="btnResetTime" type="button">Reset timebase (both)</button>
+          <button id="btnResetTime" type="button">Reset time (both)</button>
 
           <span class="pill"><span id="statusDot" class="dot"></span><span id="statusText" class="small">Disconnected</span></span>
           <span class="pill"><span class="small">Device:</span><span id="deviceName" class="mono small">—</span></span>
@@ -108,12 +107,12 @@
 
       <div class="small" style="margin-top:10px; line-height:1.45;">
         UUIDs: <span class="mono">Service</span> <span class="mono">cddf1000-30f7-4671-8b43-5e40ba53514a</span> • <span class="mono">Notify</span> <span class="mono">cddf1002-30f7-4671-8b43-5e40ba53514a</span><br/>
-        Packet parsing: supports <span class="mono">8, 16, 24, ...</span> bytes per notification (multiple samples packed: 8 bytes each).
-        Overlay: #1 solid blue, #2 solid red.
+        Overlay: #1 solid blue, #2 solid red. Processed: per-device rolling baseline (2 s) + robust rolling normalization (5 s, 10–90%).
       </div>
 
-      <!-- Processed plot -->
-      <div class="small" style="margin-top:12px; margin-bottom:6px;">Processed (per-device rolling baseline + rolling robust normalization to 0–1)</div>
+      <div class="small" style="margin-top:12px; margin-bottom:6px;">
+        Processed (per-device rolling baseline + rolling robust normalization to 0–1)
+      </div>
       <canvas id="plotProc" width="1400" height="320" style="height:260px;"></canvas>
     </div>
 
@@ -141,17 +140,16 @@
         <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 14px 0;" />
 
         <div class="small" style="line-height:1.55;">
-          <div style="font-weight:700; margin-bottom:6px;">Notes</div>
-          • We plot each device on a <span class="mono">local timebase</span> (seconds since first packet received per device). Use “Reset timebase” to re-zero both at once.<br/>
-          • Processed plot uses per-device rolling stats (baseline window 2 s, normalization window 5 s, robust 10–90% percentiles).<br/>
-          • Android: Chrome/Edge works. Must be served from <span class="mono">https://</span> or <span class="mono">http://localhost</span>. iOS Safari: no Web Bluetooth.
+          <div style="font-weight:700; margin-bottom:6px;">If device #2 is hard to detect/connect</div>
+          • Web Bluetooth can be picky when you use a strict <span class="mono">service filter</span>. This code now uses a <b>fallback</b>: if filtered discovery fails, it re-opens the picker with <span class="mono">acceptAllDevices</span> and then verifies your service exists.<br/>
+          • Connection can fail if the peripheral is already connected to another central, or if it’s advertising too slowly. (Your ~1.3 s advertising interval can make it feel “laggy”.)
         </div>
       </div>
 
       <div class="card">
         <div class="small" style="line-height:1.55;">
-          <div style="font-weight:700; margin-bottom:6px;">Processing</div>
-          Baseline: median of last ~2 s. Normalization: robust 10–90% range of last ~5 s (after baseline removal), clamped to 0–1.
+          <div style="font-weight:700; margin-bottom:6px;">Reset time (both)</div>
+          Your Python does <b>client-side</b> resets (not hardware): it starts a new segment from 0 s for display and keeps a recording offset for continuous saving. The button here mirrors that behavior for both devices.
         </div>
       </div>
     </div>
@@ -242,15 +240,18 @@ const dev = Array.from({length: DEV_N}, () => ({
   dataChar: null,
   handler: null,
 
-  // session storage (CSV) raw volts + derived processed values captured at ingest-time
-  sessionLocalT: [],
+  // session storage (CSV)
+  sessionLocalT: [],        // segment time (resets on "Reset time")
+  sessionLocalTCont: [],    // continuous time (segment + recordingOffset)
   sessionRawT: [],
-  sessionV: [],
-  sessionProc: [],   // baseline removed (rolling, per-device)
-  sessionNorm: [],   // normalized 0..1 (rolling, per-device)
+  sessionV: [],             // raw voltage (top plot)
+  sessionProc: [],          // baseline removed (bottom plot)
+  sessionNorm: [],          // normalized 0..1 (bottom plot)
+
+  recordingOffset: 0,       // like your Python recording_offset
 
   // rolling for plot (local timebase)
-  times: [],
+  times: [],                // segment time for display
   volts: [],
   startIdx: 0,
 
@@ -266,6 +267,18 @@ const BASELINE_WIN_S = 2.0; // baseline = median of last N seconds
 const NORM_WIN_S = 5.0;     // normalization computed from last N seconds
 const NORM_Q_LO = 0.10;     // robust percentiles
 const NORM_Q_HI = 0.90;
+
+// Render throttle
+let drawPending = false;
+function requestDraw() {
+  if (drawPending) return;
+  drawPending = true;
+  requestAnimationFrame(() => {
+    drawPending = false;
+    drawOverlay();
+    drawProcessed();
+  });
+}
 
 function toHex(u8) {
   let s = '';
@@ -314,13 +327,11 @@ function rollingNormParams(di, t1, base) {
   }
   slice.sort((a,b)=>a-b);
 
-  // robust lo/hi
   let lo = quantile(slice, NORM_Q_LO);
   let hi = quantile(slice, NORM_Q_HI);
-
   let denom = hi - lo;
+
   if (!isFinite(lo) || !isFinite(hi) || Math.abs(denom) < 1e-9) {
-    // fallback to min/max of slice
     const mn = slice.length ? slice[0] : 0;
     const mx = slice.length ? slice[slice.length - 1] : 1;
     lo = isFinite(mn) ? mn : 0;
@@ -332,55 +343,46 @@ function rollingNormParams(di, t1, base) {
   return { lo, denom };
 }
 
-// Render throttle
-let drawPending = false;
-function requestDraw() {
-  if (drawPending) return;
-  drawPending = true;
-  requestAnimationFrame(() => {
-    drawPending = false;
-    drawOverlay();
-    drawProcessed();
-  });
-}
-
 function addSample(idx, tRaw, v) {
   const d = dev[idx];
   const nowMs = performance.now();
   if (d.t0LocalMs === null) d.t0LocalMs = nowMs;
-  const tLocal = (nowMs - d.t0LocalMs) / 1000.0;
 
-  // rolling plot storage
+  const tLocal = (nowMs - d.t0LocalMs) / 1000.0;  // segment time (resets on Reset time)
+  const tCont  = tLocal + d.recordingOffset;       // continuous time like Python
+
+  // rolling plot buffers (segment time)
   d.times.push(tLocal);
   d.volts.push(v);
 
-  // maintain window indices (for drawing window)
+  d.lastLocalT = tLocal;
+  d.lastV = v;
+
+  // maintain visible window index
   const winS = Math.max(1, Math.min(120, Number(winSecondsEl?.value || 10)));
   const tMinPlot = tLocal - winS;
   while (d.startIdx < d.times.length && d.times[d.startIdx] < tMinPlot) d.startIdx++;
 
-  // prevent unbounded growth
+  // avoid unbounded growth
   if (d.startIdx > 4000) {
     d.times = d.times.slice(d.startIdx);
     d.volts = d.volts.slice(d.startIdx);
     d.startIdx = 0;
   }
 
-  // per-device rolling baseline + rolling robust normalization (computed on RECENT window only)
+  // per-device rolling processing (uses recent history only)
   const base = rollingBaseline(idx, tLocal);
-  const proc = v - base; // baseline removed
+  const proc = v - base;
   const np = rollingNormParams(idx, tLocal, base);
   const norm = clamp01((proc - np.lo) / np.denom);
 
-  // session (CSV) store BOTH raw + processed + normalized per sample
+  // session arrays (CSV)
   d.sessionLocalT.push(tLocal);
+  d.sessionLocalTCont.push(tCont);
   d.sessionRawT.push(tRaw);
   d.sessionV.push(v);
   d.sessionProc.push(proc);
   d.sessionNorm.push(norm);
-
-  d.lastLocalT = tLocal;
-  d.lastV = v;
 
   // sample rate estimate
   d.sampleTimesMs.push(nowMs);
@@ -427,12 +429,14 @@ function updateKPIs(activeIdx) {
 function clearData() {
   for (let i = 0; i < DEV_N; i++) {
     const d = dev[i];
-
     d.sessionLocalT.length = 0;
+    d.sessionLocalTCont.length = 0;
     d.sessionRawT.length = 0;
     d.sessionV.length = 0;
     d.sessionProc.length = 0;
     d.sessionNorm.length = 0;
+
+    d.recordingOffset = 0;
 
     d.times = [];
     d.volts = [];
@@ -455,23 +459,34 @@ function clearData() {
   drawProcessed(true);
 }
 
-// Reset timebase for BOTH devices at once (does NOT clear data)
+/**
+ * This mirrors your Python behavior (client-side reset, not hardware):
+ * - recordingOffset += last segment duration (so CSV can be continuous)
+ * - clear display buffers (times/volts)
+ * - reset local time origin so new segment starts at 0 s (for both devices)
+ */
 function resetTimebaseBoth() {
   const now = performance.now();
   for (let i = 0; i < DEV_N; i++) {
     const d = dev[i];
-    if (d.device) {
-      // Set a new origin so future samples start near t=0
-      d.t0LocalMs = now;
+
+    if (d.times.length) {
+      const lastSegT = d.times[d.times.length - 1];
+      if (isFinite(lastSegT) && lastSegT > 0) d.recordingOffset += lastSegT;
     }
+
+    d.times = [];
+    d.volts = [];
+    d.startIdx = 0;
+
+    if (d.device) d.t0LocalMs = now;
+    d.sampleTimesMs = [];
   }
-  // optionally you might want to clear rolling arrays so overlay is clean; but user asked only reset timestamps.
+  setStatus(true, 'Time reset (both) — new segment starts at 0 s');
   requestDraw();
 }
 
 function downloadCSV() {
-  // Export as aligned rows with columns per device:
-  // time1, rawV1, proc1, norm1, time2, rawV2, proc2, norm2 (+ raw_time if you want)
   const n1 = dev[0].sessionLocalT.length;
   const n2 = dev[1].sessionLocalT.length;
   const n = Math.max(n1, n2);
@@ -481,9 +496,14 @@ function downloadCSV() {
   const name2 = dev[1].device?.name || 'dev2';
 
   const header = [
-    `${name1}_local_time_s`, `${name1}_raw_time_s`, `${name1}_voltage_V`, `${name1}_proc_baselineRemoved`, `${name1}_norm_0_1`,
-    `${name2}_local_time_s`, `${name2}_raw_time_s`, `${name2}_voltage_V`, `${name2}_proc_baselineRemoved`, `${name2}_norm_0_1`,
+    // Device 1 (Top + Bottom box columns)
+    `${name1}_seg_time_s`, `${name1}_cont_time_s`, `${name1}_raw_time_s`,
+    `${name1}_raw_V`, `${name1}_proc_baselineRemoved`, `${name1}_norm_0_1`,
+    // Device 2 (Top + Bottom box columns)
+    `${name2}_seg_time_s`, `${name2}_cont_time_s`, `${name2}_raw_time_s`,
+    `${name2}_raw_V`, `${name2}_proc_baselineRemoved`, `${name2}_norm_0_1`,
   ];
+
   const lines = [header.join(',')];
 
   function cell(x) {
@@ -497,6 +517,7 @@ function downloadCSV() {
 
     // dev1
     row.push(cell(dev[0].sessionLocalT[i]));
+    row.push(cell(dev[0].sessionLocalTCont[i]));
     row.push(cell(dev[0].sessionRawT[i]));
     row.push(cell(dev[0].sessionV[i]));
     row.push(cell(dev[0].sessionProc[i]));
@@ -504,6 +525,7 @@ function downloadCSV() {
 
     // dev2
     row.push(cell(dev[1].sessionLocalT[i]));
+    row.push(cell(dev[1].sessionLocalTCont[i]));
     row.push(cell(dev[1].sessionRawT[i]));
     row.push(cell(dev[1].sessionV[i]));
     row.push(cell(dev[1].sessionProc[i]));
@@ -589,7 +611,6 @@ function drawAxes(ctxX, w, h, padL, padR, padT, padB, t0, t1, vMin, vMax, title)
   ctxX.fillText(title, padL, 14);
 }
 
-// solid trace, per-device color
 function drawTrace(ctxX, padL, padT, plotW, plotH, t0, t1, vMin, vMax, timesArr, voltsArr, startIdx, colorCssVar) {
   const count = timesArr.length - startIdx;
   if (count < 2) return;
@@ -711,7 +732,7 @@ function drawProcessed(clearOnly=false) {
     const count = d.times.length - d.startIdx;
     if (count < 2) return;
 
-    // compute current rolling params (per-device)
+    // current rolling params (per device)
     const base = rollingBaseline(di, t1);
     const np = rollingNormParams(di, t1, base);
 
@@ -726,7 +747,6 @@ function drawProcessed(clearOnly=false) {
 
     ctxProc.beginPath();
     let first = true;
-
     for (let i = d.startIdx; i < d.times.length; i += step) {
       const tt = d.times[i];
       if (tt < t0) continue;
@@ -740,7 +760,6 @@ function drawProcessed(clearOnly=false) {
       if (first) { ctxProc.moveTo(x, y); first = false; }
       else ctxProc.lineTo(x, y);
     }
-
     ctxProc.stroke();
     ctxProc.restore();
   }
@@ -777,6 +796,60 @@ function updateButtons() {
   if (!any) setStatus(false, 'Disconnected');
 }
 
+// ---------- Connection robustness helpers ----------
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function gattConnectWithRetry(device, attempts=4) {
+  let lastErr = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      // If already connected, reuse it
+      if (device.gatt?.connected) return device.gatt;
+      const server = await device.gatt.connect();
+      return server;
+    } catch (e) {
+      lastErr = e;
+      await sleep(250 + i * 350);
+    }
+  }
+  throw lastErr;
+}
+
+async function getServiceAndCharWithRetry(server, attempts=4) {
+  let lastErr = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      const ch = await service.getCharacteristic(DATA_CHAR_UUID);
+      return { service, ch };
+    } catch (e) {
+      lastErr = e;
+      await sleep(250 + i * 350);
+    }
+  }
+  throw lastErr;
+}
+
+// Request device with a strict filter first; fallback to acceptAllDevices
+async function requestDeviceWithFallback(idx) {
+  // Attempt 1: strict filter (can fail to show devices sometimes)
+  try {
+    setStatus(null, `Picker (#${idx+1})… (filtered by service)`);
+    return await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERVICE_UUID] }],
+      optionalServices: [SERVICE_UUID]
+    });
+  } catch (e) {
+    // NotFoundError is common if nothing matches / browser doesn't show it
+    // Fall back to acceptAllDevices so user can still pick it, then we verify service exists.
+    setStatus(null, `Picker (#${idx+1})… (fallback: show all)`);
+    return await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [SERVICE_UUID]
+    });
+  }
+}
+
 async function connectIdx(idx) {
   clearUiError();
 
@@ -785,13 +858,18 @@ async function connectIdx(idx) {
     return;
   }
 
-  try {
-    setStatus(null, `Opening device picker (#${idx+1})…`);
+  // If you accidentally try to connect same device twice
+  if (dev[idx].device) return;
 
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [SERVICE_UUID] }],
-      optionalServices: [SERVICE_UUID]
-    });
+  try {
+    const device = await requestDeviceWithFallback(idx);
+
+    // Avoid picking the same peripheral for #1 and #2
+    const otherIdx = (idx === 0) ? 1 : 0;
+    if (dev[otherIdx].device && dev[otherIdx].device.id === device.id) {
+      showUiError('You selected the same device for #1 and #2. Pick the other ring/device.');
+      return;
+    }
 
     dev[idx].device = device;
 
@@ -801,14 +879,15 @@ async function connectIdx(idx) {
     });
 
     setStatus(null, `Connecting (#${idx+1})…`);
-    dev[idx].server = await device.gatt.connect();
+    const server = await gattConnectWithRetry(device, 4);
+    dev[idx].server = server;
 
-    setStatus(null, `Discovering services (#${idx+1})…`);
-    const service = await dev[idx].server.getPrimaryService(SERVICE_UUID);
+    setStatus(null, `Discovering service/char (#${idx+1})…`);
+    const { ch } = await getServiceAndCharWithRetry(server, 4);
+    dev[idx].dataChar = ch;
 
+    // Subscribe
     setStatus(null, `Subscribing (#${idx+1})…`);
-    dev[idx].dataChar = await service.getCharacteristic(DATA_CHAR_UUID);
-
     dev[idx].handler = onNotificationFactory(idx);
     await dev[idx].dataChar.startNotifications();
     dev[idx].dataChar.addEventListener('characteristicvaluechanged', dev[idx].handler);
@@ -821,7 +900,7 @@ async function connectIdx(idx) {
   } catch (err) {
     console.error(err);
     setStatus(false, 'Error');
-    showUiError('Connect failed: ' + (err?.message || err));
+    showUiError('Connect failed: ' + (err?.message || err) + '\n\nTip: make sure the other device is not already connected to your phone/PC, and keep it close.');
     await disconnectIdx(idx);
   }
 }
