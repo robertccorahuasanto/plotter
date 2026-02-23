@@ -1,498 +1,610 @@
-<!DOCTYPE html>
+<!doctype html>
+
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<title>ANNA Plotter v6.3-B</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-:root {
-  --bg: #0a0e17;
-  --surface: #111827;
-  --surface2: #1a2234;
-  --border: #1e293b;
-  --text: #e2e8f0;
-  --text-dim: #64748b;
-  --accent: #22d3ee;
-  --accent-glow: rgba(34, 211, 238, 0.15);
-  --red: #f43f5e;
-  --green: #34d399;
-  --orange: #fb923c;
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BLE Voltage Plotter (Web Bluetooth)</title>
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --panel:#121a23;
+      --muted:#9bb0c5;
+      --fg:#e7eef6;
+      --grid:rgba(255,255,255,.10);
+      --accent:#48b0ff;
+      --warn:#ffb020;
+      --bad:#ff4d4d;
+      --ok:#5cff8a;
+      --shadow:0 10px 30px rgba(0,0,0,.35);
+      --radius:16px;
+    }
+    [data-theme="light"]{
+      --bg:#f6f8fb;
+      --panel:#ffffff;
+      --muted:#546a80;
+      --fg:#0b1724;
+      --grid:rgba(0,0,0,.10);
+      --accent:#0077ff;
+      --warn:#b86a00;
+      --bad:#cc1f1f;
+      --ok:#0f8f3b;
+      --shadow:0 10px 30px rgba(0,0,0,.10);
+    }*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  background: radial-gradient(1200px 600px at 20% -10%, rgba(72,176,255,.25), transparent 60%),
+              radial-gradient(900px 500px at 110% 10%, rgba(92,255,138,.14), transparent 60%),
+              var(--bg);
+  color:var(--fg);
 }
-* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-body {
-  font-family: 'DM Sans', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  min-height: 100dvh;
-  overflow-x: hidden;
+.wrap{max-width:1100px;margin:18px auto;padding:0 14px 22px;}
+.top{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+  margin-bottom:12px;
 }
-body::before {
-  content:''; position:fixed; inset:0; pointer-events:none;
-  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(34,211,238,0.04), transparent),
-              radial-gradient(ellipse 60% 40% at 80% 100%, rgba(244,63,94,0.03), transparent);
+.title{display:flex;flex-direction:column;gap:2px;}
+h1{font-size:18px;margin:0;letter-spacing:.2px}
+.sub{font-size:12px;color:var(--muted);line-height:1.4}
+.panel{
+  background:linear-gradient(180deg, rgba(255,255,255,.04), transparent 40%),
+             var(--panel);
+  border:1px solid rgba(255,255,255,.06);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
 }
-.app { position:relative; z-index:1; padding:12px; max-width:600px; margin:0 auto; }
-
-/* Header */
-.header { display:flex; align-items:center; justify-content:space-between; padding:8px 0 12px; }
-.header-left { display:flex; align-items:center; gap:10px; }
-.logo {
-  width:32px; height:32px; border-radius:8px;
-  background:linear-gradient(135deg, var(--accent), #818cf8);
-  display:flex; align-items:center; justify-content:center;
-  font-family:'JetBrains Mono',monospace; font-weight:700; font-size:13px; color:var(--bg);
+[data-theme="light"] .panel{
+  border:1px solid rgba(0,0,0,.07);
+  background:linear-gradient(180deg, rgba(0,0,0,.02), transparent 40%),
+             var(--panel);
 }
-.header-title { font-family:'JetBrains Mono',monospace; font-weight:600; font-size:15px; }
-.header-title span { color:var(--text-dim); font-weight:400; font-size:11px; margin-left:6px; }
-
-.status-pill {
-  font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:500;
-  padding:4px 10px; border-radius:20px; white-space:nowrap; transition:all 0.3s;
-  background:rgba(244,63,94,0.12); color:var(--red); border:1px solid rgba(244,63,94,0.2);
+.controls{
+  padding:12px;
+  display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;
 }
-.status-pill.connected { background:rgba(52,211,153,0.12); color:var(--green); border-color:rgba(52,211,153,0.2); }
-.status-pill.connecting { background:rgba(251,146,60,0.12); color:var(--orange); border-color:rgba(251,146,60,0.2); }
-
-/* Connect button */
-.connect-btn {
-  width:100%; padding:14px; border:none; border-radius:12px;
-  font-family:'DM Sans',sans-serif; font-weight:600; font-size:15px;
-  cursor:pointer; transition:all 0.2s;
-  background:linear-gradient(135deg, #22d3ee, #818cf8); color:var(--bg);
-  box-shadow:0 4px 20px rgba(34,211,238,0.25);
+.controls-left,.controls-right{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+button{
+  border:1px solid rgba(255,255,255,.10);
+  background:rgba(255,255,255,.06);
+  color:var(--fg);
+  padding:10px 12px;
+  border-radius:12px;
+  cursor:pointer;
+  font-weight:600;
+  letter-spacing:.2px;
+  transition: transform .05s ease, background .2s ease, border-color .2s ease;
+  user-select:none;
 }
-.connect-btn:active { transform:scale(0.98); }
-.connect-btn.stop { background:var(--surface2); color:var(--red); border:1px solid rgba(244,63,94,0.3); box-shadow:none; }
-.connect-btn:disabled { opacity:0.5; cursor:not-allowed; transform:none; }
-
-/* Stats */
-.stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:12px 0; }
-.stat-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:10px; text-align:center; }
-.stat-label { font-family:'JetBrains Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-dim); margin-bottom:4px; }
-.stat-value { font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:600; }
-.stat-value .u { font-size:10px; font-weight:400; color:var(--text-dim); margin-left:2px; }
-
-/* Plot */
-.plot-box {
-  background:var(--surface); border:1px solid var(--border); border-radius:14px;
-  padding:12px 8px 8px; margin:12px 0; position:relative; overflow:hidden;
+[data-theme="light"] button{border-color:rgba(0,0,0,.10);background:rgba(0,0,0,.03)}
+button:hover{background:rgba(255,255,255,.10)}
+[data-theme="light"] button:hover{background:rgba(0,0,0,.06)}
+button:active{transform:translateY(1px)}
+button.primary{
+  background:linear-gradient(180deg, rgba(72,176,255,.22), rgba(72,176,255,.08));
+  border-color:rgba(72,176,255,.35);
 }
-.plot-box::before { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--accent),transparent); opacity:0.4; }
-.plot-hdr { display:flex; justify-content:space-between; align-items:center; padding:0 4px 8px; }
-.plot-title { font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.08em; }
-.live-dot { width:6px; height:6px; border-radius:50%; background:var(--red); display:inline-block; margin-right:6px; opacity:0; transition:opacity 0.3s; }
-.live-dot.on { background:var(--green); opacity:1; animation:blink 1.2s ease-in-out infinite; }
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
-.plot-v { font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; color:var(--accent); }
-.plot-v .u { font-size:12px; font-weight:400; color:var(--text-dim); }
-canvas { width:100%; height:260px; display:block; border-radius:8px; }
-
-/* Controls */
-.ctrls { display:flex; gap:8px; margin:12px 0; }
-.cb {
-  flex:1; padding:10px 8px; border:1px solid var(--border); border-radius:10px;
-  background:var(--surface); color:var(--text-dim); font-family:'JetBrains Mono',monospace;
-  font-size:11px; font-weight:500; cursor:pointer; transition:all 0.15s;
-  display:flex; align-items:center; justify-content:center; gap:6px;
+button.danger{
+  background:linear-gradient(180deg, rgba(255,77,77,.22), rgba(255,77,77,.08));
+  border-color:rgba(255,77,77,.35);
 }
-.cb:active { background:var(--surface2); color:var(--text); border-color:var(--accent); }
-.cb svg { width:14px; height:14px; }
+button:disabled{opacity:.55; cursor:not-allowed;}
 
-/* Time selector */
-.tsel { display:flex; gap:4px; margin:8px 0; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:4px; }
-.topt {
-  flex:1; padding:7px 0; border:none; border-radius:7px; background:transparent;
-  color:var(--text-dim); font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:500;
-  cursor:pointer; transition:all 0.15s;
+.pill{
+  font-size:12px;
+  padding:8px 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.10);
+  background:rgba(255,255,255,.04);
+  color:var(--muted);
+  display:flex;gap:8px;align-items:center;
+  white-space:nowrap;
 }
-.topt.on { background:var(--accent-glow); color:var(--accent); border:1px solid rgba(34,211,238,0.2); }
+[data-theme="light"] .pill{border-color:rgba(0,0,0,.10);background:rgba(0,0,0,.03)}
+.dot{width:8px;height:8px;border-radius:50%;}
+.dot.ok{background:var(--ok)}
+.dot.bad{background:var(--bad)}
+.dot.warn{background:var(--warn)}
 
-/* Toggle */
-.trow { display:flex; align-items:center; justify-content:space-between; padding:0 2px; margin:6px 0; }
-.tlbl { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-dim); }
-.tgl { width:36px; height:20px; border-radius:10px; background:var(--surface2); border:1px solid var(--border); position:relative; cursor:pointer; transition:all 0.2s; }
-.tgl.on { background:rgba(34,211,238,0.2); border-color:var(--accent); }
-.tgl::after { content:''; width:14px; height:14px; border-radius:50%; background:var(--text-dim); position:absolute; top:2px; left:2px; transition:all 0.2s; }
-.tgl.on::after { left:18px; background:var(--accent); }
-
-/* Diag */
-.diag { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px; margin:12px 0; }
-.diag-t { font-family:'JetBrains Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-dim); margin-bottom:8px; }
-.diag-g { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
-.di { display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--surface2); border-radius:6px; }
-.dk { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-dim); }
-.dv { font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; }
-
-/* Toast */
-.toast {
-  position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
-  background:var(--surface2); color:var(--text);
-  font-family:'JetBrains Mono',monospace; font-size:11px; padding:12px 20px;
-  border-radius:12px; z-index:1000; max-width:90vw; text-align:center;
-  opacity:0; pointer-events:none; transition:opacity 0.3s; box-shadow:0 8px 32px rgba(0,0,0,0.5);
-  line-height:1.5; border:1px solid var(--accent);
+.grid{display:grid;grid-template-columns: 1fr;gap:12px;}
+.plot-panel{padding:12px}
+.plot-head{
+  display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;
+  margin-bottom:10px;
 }
-.toast.show { opacity:1; pointer-events:auto; }
-.toast.err { border-color:var(--red); }
-
-/* Debug log */
-.dlog {
-  background:var(--surface); border:1px solid var(--border); border-radius:12px;
-  padding:12px; margin:8px 0; max-height:180px; overflow-y:auto;
-  font-family:'JetBrains Mono',monospace; font-size:10px; line-height:1.7; color:var(--text-dim);
+.plot-title{font-weight:800;font-size:13px}
+.plot-meta{font-size:12px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
+.plot{
+  width:100%;
+  height:360px;
+  border-radius:14px;
+  background:rgba(0,0,0,.12);
+  border:1px solid rgba(255,255,255,.06);
+  display:block;
 }
-.dlog .e { color:var(--red); }
-.dlog .g { color:var(--green); }
-.dlog .w { color:var(--orange); }
+[data-theme="light"] .plot{background:rgba(0,0,0,.03);border-color:rgba(0,0,0,.08)}
+.plot.small{height:220px}
 
-.footer { text-align:center; padding:16px 0 24px; font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--text-dim); opacity:0.6; }
-</style>
-</head>
-<body>
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+label{font-size:12px;color:var(--muted)}
+input[type="number"]{
+  width:88px;
+  padding:9px 10px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.10);
+  background:rgba(255,255,255,.04);
+  color:var(--fg);
+  outline:none;
+}
+[data-theme="light"] input[type="number"]{border-color:rgba(0,0,0,.10);background:rgba(0,0,0,.03)}
 
-<div class="toast" id="toast"></div>
+.footer{margin-top:10px;font-size:12px;color:var(--muted);line-height:1.4;}
+code{
+  background:rgba(255,255,255,.06);
+  padding:2px 6px;border-radius:8px;
+  border:1px solid rgba(255,255,255,.10);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size:12px;
+}
+[data-theme="light"] code{background:rgba(0,0,0,.04);border-color:rgba(0,0,0,.10)}
 
-<div class="app">
-  <div class="header">
-    <div class="header-left">
-      <div class="logo">A</div>
-      <div class="header-title">ANNA Plotter <span>v6.3-B · Feb 23</span></div>
-    </div>
-    <div class="status-pill" id="pill">Disconnected</div>
+  </style>
+</head><body data-theme="dark">
+  <div class="wrap">
+    <div class="top">
+      <div class="title">
+        <h1>BLE Voltage Plotter — Web Bluetooth</h1>
+        <div class="sub">
+          Reads v6 frames: <code>[float32 t_start] + [10 × float32 V]</code>, dt=<code>0.008s</code>. Diagnostic: <code>u16,u16,u16,u16</code>.
+          <br/>Tip: Use <b>Chrome on Android</b> + GitHub Pages (HTTPS). iOS Safari doesn’t support Web Bluetooth.
+        </div>
+      </div><div class="pill" id="statusPill">
+    <span class="dot bad" id="statusDot"></span>
+    <span id="statusText">Disconnected</span>
   </div>
-
-  <button class="connect-btn" id="btn">Connect to ANNA</button>
-
-  <div class="stats">
-    <div class="stat-card"><div class="stat-label">Rate</div><div class="stat-value" id="sRate">--<span class="u"> Hz</span></div></div>
-    <div class="stat-card"><div class="stat-label">Packets</div><div class="stat-value" id="sPkt">0</div></div>
-    <div class="stat-card"><div class="stat-label">Samples</div><div class="stat-value" id="sSmp">0</div></div>
-  </div>
-
-  <div class="plot-box">
-    <div class="plot-hdr">
-      <div><span class="live-dot" id="dot"></span><span class="plot-title">Voltage</span></div>
-      <div class="plot-v" id="lv">--<span class="u"> V</span></div>
-    </div>
-    <canvas id="c"></canvas>
-  </div>
-
-  <div class="tsel" id="tsel">
-    <button class="topt" data-s="5">5s</button>
-    <button class="topt on" data-s="10">10s</button>
-    <button class="topt" data-s="20">20s</button>
-    <button class="topt" data-s="30">30s</button>
-    <button class="topt" data-s="60">60s</button>
-  </div>
-
-  <div class="trow">
-    <span class="tlbl">Auto-scale Y axis</span>
-    <div class="tgl on" id="asc"></div>
-  </div>
-
-  <div class="ctrls">
-    <button class="cb" id="bClr">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2m-7 5v6m4-6v6M5 6l1 14h12l1-14"/></svg>
-      Clear
-    </button>
-    <button class="cb" id="bSav">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3"/></svg>
-      Save CSV
-    </button>
-    <button class="cb" id="bRst">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
-      Reset
-    </button>
-  </div>
-
-  <div class="diag">
-    <div class="diag-t">BLE Diagnostics</div>
-    <div class="diag-g">
-      <div class="di"><span class="dk">Interval</span><span class="dv" id="dCI">--</span></div>
-      <div class="di"><span class="dk">MTU</span><span class="dv" id="dMTU">--</span></div>
-      <div class="di"><span class="dk">Slave Lat</span><span class="dv" id="dSL">--</span></div>
-      <div class="di"><span class="dk">Eff. Rate</span><span class="dv" id="dEff">--</span></div>
-    </div>
-  </div>
-
-  <div class="dlog" id="log"></div>
-
-  <div class="footer">Copyright &copy; 2024 Robert Ccorahua-Santo · Build v6.3-B</div>
 </div>
 
-<script>
-/* ===========================================================
-   IMMEDIATE TEST — if you see "JS OK" in the log, script runs
-   =========================================================== */
-(function(){
-  var el = document.getElementById('log');
-  el.innerHTML = '<div class="g">[boot] JS loaded — v6.3-B Feb23</div>';
-})();
+<div class="panel controls">
+  <div class="controls-left">
+    <button class="primary" id="btnConnect">Connect BLE</button>
+    <button class="danger" id="btnDisconnect" disabled>Disconnect</button>
+    <button id="btnClear" disabled>Clear</button>
+    <button id="btnSave" disabled>Save CSV</button>
+    <button id="btnTheme">Toggle Theme</button>
+  </div>
 
-/* ===========================================================
-   CONFIG — ANNA B112 firmware v6
-   =========================================================== */
-var SVC  = 'cddf1000-30f7-4671-8b43-5e40ba53514a';
-var VCHAR = 'cddf1002-30f7-4671-8b43-5e40ba53514a';
-var DCHAR = 'cddf1003-30f7-4671-8b43-5e40ba53514a';
-var SPP  = 10;       // samples per packet
-var SDT  = 0.008;    // 8 ms
-var FSZ  = 44;       // frame size
+  <div class="controls-right">
+    <div class="row">
+      <label for="timeWindow">Time window (s)</label>
+      <input id="timeWindow" type="number" min="1" max="120" step="1" value="10">
+    </div>
+    <div class="pill"><span>Rate:</span><b id="rateHz">0</b><span>samp/s</span></div>
+    <div class="pill"><span>Packets:</span><b id="packetCount">0</b></div>
+    <div class="pill"><span>Notif:</span><b id="notifSize">--</b></div>
+    <div class="pill"><span id="diagText">Interval: --</span></div>
+  </div>
+</div>
 
-/* ===========================================================
-   HELPERS
-   =========================================================== */
-function L(m, c) {
-  c = c || '';
-  console.log('[ANNA] ' + m);
-  var el = document.getElementById('log');
-  var d = document.createElement('div');
-  if (c) d.className = c;
-  d.textContent = '[' + new Date().toLocaleTimeString('en-US',{hour12:false}) + '] ' + m;
-  el.appendChild(d);
-  el.scrollTop = 99999;
-}
+<div class="grid" style="margin-top:12px;">
+  <div class="panel plot-panel">
+    <div class="plot-head">
+      <div class="plot-title">Raw Voltage (V)</div>
+      <div class="plot-meta">
+        <span>Y auto-range (recent)</span>
+        <span>•</span>
+        <span>X: seconds</span>
+      </div>
+    </div>
+    <canvas class="plot" id="plotRaw"></canvas>
+  </div>
 
-var _tt = 0;
-function toast(m, ms, err) {
-  var t = document.getElementById('toast');
-  t.textContent = m;
-  t.className = 'toast show' + (err ? ' err' : '');
-  clearTimeout(_tt);
-  _tt = setTimeout(function(){ t.className = 'toast'; }, ms || 4000);
-}
+  <div class="panel plot-panel">
+    <div class="plot-head">
+      <div class="plot-title">Baseline Removed (shifted ≥ 0)</div>
+      <div class="plot-meta">
+        <span>EMA baseline</span>
+        <span>•</span>
+        <span>good for pulse morphology</span>
+      </div>
+    </div>
+    <canvas class="plot small" id="plotProc"></canvas>
+  </div>
+</div>
 
-/* ===========================================================
-   STATE
-   =========================================================== */
-var dev = null, srv = null, vch = null, dch = null;
-var on = false;
-var xD = [], yD = [];
-var MX = 20000;
-var rx = new Uint8Array(0);
-var nPkt = 0, nSmp = 0;
-var rT = { n: 0, t: performance.now(), r: 0 };
-var tWin = 10;
-var af = null;
+<div class="footer">
+  Service: <code>cddf1000-30f7-4671-8b43-5e40ba53514a</code> •
+  Voltage: <code>cddf1002-30f7-4671-8b43-5e40ba53514a</code> •
+  Diag: <code>cddf1003-30f7-4671-8b43-5e40ba53514a</code>
+</div>
 
-/* ===========================================================
-   BOOT CHECKS
-   =========================================================== */
-L('URL: ' + location.href);
-L('Secure: ' + !!window.isSecureContext, window.isSecureContext ? 'g' : 'e');
-L('BLE API: ' + !!navigator.bluetooth, navigator.bluetooth ? 'g' : 'e');
+  </div><script>
+(() => {
+  // ====== BLE UUIDs (FIXED for Web Bluetooth origin permissions) ======
+  // IMPORTANT: SERVICE_UUID must be present in requestDevice() (filters or optionalServices)
+  // otherwise Chrome will show: "Origin is not allowed to access any service".
+  const SERVICE_UUID      = "cddf1000-30f7-4671-8b43-5e40ba53514a";
+  const VOLTAGE_CHAR_UUID = "cddf1002-30f7-4671-8b43-5e40ba53514a";
+  const DIAG_CHAR_UUID    = "cddf1003-30f7-4671-8b43-5e40ba53514a";
 
-if (!window.isSecureContext) {
-  L('ERROR: Page not served over HTTPS!', 'e');
-  toast('Needs HTTPS! Use GitHub Pages URL, not raw github.com', 10000, true);
-}
-if (!navigator.bluetooth) {
-  L('ERROR: navigator.bluetooth missing', 'e');
-  toast('Web Bluetooth not available in this browser', 10000, true);
-}
+  // v6 frame format: 44 bytes = 11 float32 LE: [t_start] + [10 voltages]
+  const FRAME_SIZE = 44;
+  const SAMPLES_PER_PACKET = 10;
+  const SAMPLE_DT = 0.008; // seconds
 
-/* ===========================================================
-   TIME WINDOW
-   =========================================================== */
-document.getElementById('tsel').addEventListener('click', function(e) {
-  var b = e.target;
-  if (!b.classList.contains('topt')) return;
-  var all = document.querySelectorAll('.topt');
-  for (var i = 0; i < all.length; i++) all[i].classList.remove('on');
-  b.classList.add('on');
-  tWin = parseInt(b.getAttribute('data-s'));
-});
+  // ====== UI ======
+  const el = (id) => document.getElementById(id);
+  const btnConnect = el("btnConnect");
+  const btnDisconnect = el("btnDisconnect");
+  const btnClear = el("btnClear");
+  const btnSave = el("btnSave");
+  const btnTheme = el("btnTheme");
+  const timeWindowInput = el("timeWindow");
 
-/* ===========================================================
-   AUTOSCALE TOGGLE
-   =========================================================== */
-document.getElementById('asc').addEventListener('click', function() {
-  this.classList.toggle('on');
-});
+  const statusDot = el("statusDot");
+  const statusText = el("statusText");
+  const rateHz = el("rateHz");
+  const packetCountEl = el("packetCount");
+  const notifSizeEl = el("notifSize");
+  const diagTextEl = el("diagText");
 
-/* ===========================================================
-   CONNECT / DISCONNECT
-   =========================================================== */
-document.getElementById('btn').addEventListener('click', function() {
-  L('Button tapped', 'g');
+  const canvasRaw = el("plotRaw");
+  const canvasProc = el("plotProc");
+  const ctxRaw = canvasRaw.getContext("2d");
+  const ctxProc = canvasProc.getContext("2d");
 
-  if (on) {
-    on = false;
-    try { if (dev && dev.gatt.connected) dev.gatt.disconnect(); } catch(e){}
-    setUI(false);
-    return;
+  function setStatus(mode, text){
+    statusText.textContent = text;
+    statusDot.className = "dot " + (mode === "ok" ? "ok" : mode === "warn" ? "warn" : "bad");
   }
 
-  if (!navigator.bluetooth) {
-    toast('No Web Bluetooth. Use Chrome + HTTPS.', 5000, true);
-    L('Abort: no BLE API', 'e');
-    return;
+  // ====== Data buffers ======
+  const tAll = [];
+  const vAll = [];
+  const pAll = [];
+
+  function getTimeWindow(){
+    const v = Number(timeWindowInput.value);
+    return (Number.isFinite(v) && v > 0) ? v : 10;
   }
 
-  var btn = document.getElementById('btn');
-  var pill = document.getElementById('pill');
-  btn.disabled = true;
-  btn.textContent = 'Scanning...';
-  pill.textContent = 'Scanning';
-  pill.className = 'status-pill connecting';
-  L('requestDevice...');
-
-  navigator.bluetooth.requestDevice({
-    filters: [{ services: [SVC] }]
-  })
-  .then(function(d) {
-    dev = d;
-    L('Got device: ' + (d.name || d.id), 'g');
-    d.addEventListener('gattserverdisconnected', function(){ setUI(false); });
-    pill.textContent = 'Connecting';
-    btn.textContent = 'Connecting...';
-    L('GATT connect...');
-    return d.gatt.connect();
-  })
-  .then(function(s) {
-    srv = s;
-    L('GATT OK', 'g');
-    return s.getPrimaryService(SVC);
-  })
-  .then(function(svc) {
-    L('Service OK', 'g');
-    return svc.getCharacteristic(VCHAR).then(function(ch) {
-      vch = ch;
-      L('Voltage char OK', 'g');
-      return ch.startNotifications().then(function() {
-        ch.addEventListener('characteristicvaluechanged', onV);
-        L('Voltage notify ON', 'g');
-        return svc;
-      });
-    });
-  })
-  .then(function(svc) {
-    return svc.getCharacteristic(DCHAR).then(function(ch) {
-      dch = ch;
-      return ch.startNotifications().then(function() {
-        ch.addEventListener('characteristicvaluechanged', onD);
-        L('Diag notify ON', 'g');
-        setTimeout(function(){
-          try { dch.readValue().then(parseD).catch(function(){}); } catch(e){}
-        }, 6000);
-      });
-    }).catch(function(e) {
-      L('Diag skip: ' + e.message, 'w');
-    });
-  })
-  .then(function() {
-    on = true;
-    setUI(true);
-    toast('Connected to ' + (dev.name || 'device'), 2000);
-    nPkt = 0; nSmp = 0;
-    rT = { n: 0, t: performance.now(), r: 0 };
-    rx = new Uint8Array(0);
-    startLoop();
-  })
-  .catch(function(err) {
-    L('FAIL: ' + err.name + ' — ' + err.message, 'e');
-    if (err.name === 'NotFoundError')
-      toast('Cancelled or no device found. Is ANNA on?', 5000, true);
-    else if (err.name === 'SecurityError')
-      toast('SecurityError — needs HTTPS', 5000, true);
-    else if (err.name === 'NetworkError')
-      toast('Connection failed. ANNA in range?', 5000, true);
-    else
-      toast(err.message, 5000, true);
-
-    btn.disabled = false;
-    btn.textContent = 'Connect to ANNA';
-    btn.className = 'connect-btn';
-    pill.textContent = 'Failed';
-    pill.className = 'status-pill';
-  });
-});
-
-function setUI(connected) {
-  var btn = document.getElementById('btn');
-  var pill = document.getElementById('pill');
-  var dot = document.getElementById('dot');
-  if (connected) {
-    btn.disabled = false;
-    btn.textContent = 'Disconnect';
-    btn.className = 'connect-btn stop';
-    pill.textContent = 'Connected';
-    pill.className = 'status-pill connected';
-    dot.classList.add('on');
-  } else {
-    on = false;
-    btn.disabled = false;
-    btn.textContent = 'Connect to ANNA';
-    btn.className = 'connect-btn';
-    pill.textContent = 'Disconnected';
-    pill.className = 'status-pill';
-    dot.classList.remove('on');
-    if (af) { cancelAnimationFrame(af); af = null; }
-    L('Disconnected');
+  // ====== Baseline removal ======
+  let baseline = null;
+  const BASELINE_ALPHA = 0.01;
+  function processSample(v){
+    if (baseline === null) baseline = v;
+    baseline = (1 - BASELINE_ALPHA) * baseline + BASELINE_ALPHA * v;
+    return v - baseline;
   }
-}
 
-/* ===========================================================
-   BLE DATA — v6 44-byte frames
-   =========================================================== */
-function onV(ev) {
-  var inc = new Uint8Array(ev.target.value.buffer);
-  var tmp = new Uint8Array(rx.length + inc.length);
-  tmp.set(rx); tmp.set(inc, rx.length); rx = tmp;
-
-  while (rx.length >= FSZ) {
-    var fr = rx.slice(0, FSZ);
-    rx = rx.slice(FSZ);
-    var dv = new DataView(fr.buffer);
-    var t0 = dv.getFloat32(0, true);
-    for (var i = 0; i < SPP; i++) {
-      xD.push(t0 + i * SDT);
-      yD.push(dv.getFloat32(4 + i * 4, true));
-      nSmp++;
+  // ====== Rate tracking ======
+  let lastRateCheck = performance.now();
+  let lastSampleCount = 0;
+  function updateRateUI(){
+    const now = performance.now();
+    if (now - lastRateCheck >= 1000){
+      const n = tAll.length;
+      const hz = n - lastSampleCount;
+      rateHz.textContent = String(hz);
+      lastSampleCount = n;
+      lastRateCheck = now;
     }
-    nPkt++;
   }
-  if (xD.length > MX) { var ex = xD.length - MX; xD.splice(0, ex); yD.splice(0, ex); }
-}
 
-/* ===========================================================
-   DIAGNOSTIC
-   =========================================================== */
-function onD(ev) { parseD(ev.target.value); }
-function parseD(dv) {
-  if (dv.byteLength < 6) return;
-  var ci = dv.getUint16(0, true);
-  var mtu = dv.getUint16(2, true);
-  var cx10 = dv.getUint16(4, true);
-  var ms = cx10 / 10;
-  var sl = dv.byteLength >= 8 ? dv.getUint16(6, true) : 0;
-  var eff = ms * (1 + sl);
-  document.getElementById('dCI').textContent = ms.toFixed(1) + ' ms';
-  document.getElementById('dMTU').textContent = mtu;
-  document.getElementById('dSL').textContent = sl;
-  document.getElementById('dEff').textContent = eff.toFixed(0) + ' ms';
-  document.getElementById('dCI').style.color = sl > 0 ? (eff >= 50 ? 'var(--green)' : 'var(--orange)') : (ci >= 60 ? 'var(--green)' : 'var(--red)');
-  L('Diag CI=' + ms + 'ms MTU=' + mtu + ' SL=' + sl, 'g');
-}
+  // ====== RX buffering ======
+  let rxBuf = new Uint8Array(0);
+  function appendToRxBuf(chunk){
+    const merged = new Uint8Array(rxBuf.length + chunk.length);
+    merged.set(rxBuf, 0);
+    merged.set(chunk, rxBuf.length);
+    rxBuf = merged;
+  }
+  function dropFromRxBuf(n){
+    rxBuf = rxBuf.slice(n);
+  }
+  function parseFramesFromRxBuf(){
+    while (rxBuf.length >= FRAME_SIZE){
+      const frame = rxBuf.slice(0, FRAME_SIZE);
+      dropFromRxBuf(FRAME_SIZE);
 
-/* ===========================================================
-   CANVAS
-   =========================================================== */
-var cv = document.getElementById('c');
-var cx = cv.getContext('2d');
+      const dv = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
+      const tStart = dv.getFloat32(0, true);
+      for (let i = 0; i < SAMPLES_PER_PACKET; i++){
+        const v = dv.getFloat32(4 + i*4, true);
+        const t = tStart + i * SAMPLE_DT;
+        tAll.push(t);
+        vAll.push(v);
+        pAll.push(processSample(v));
+      }
+    }
+  }
 
-function rsz() {
-  var r = cv.parentElement.getBoundingClientRect();
-  var d = window.devicePixelRatio || 1;
-  cv.width = (r.width - 16) * d;
-  cv.height = 260 * d;
-  cv.style.width = (r.width - 16) + 'px';
-  cv.style.height = '260px';
-  cx.setTransform(d, 0, 0, d, 0, 0);
-}
-rsz();
-window.addEventListener('resize', rs
+  // ====== Plotting ======
+  function resizeCanvasToDisplaySize(canvas){
+    const {width, height} = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.floor(width * dpr));
+    const h = Math.max(1, Math.floor(height * dpr));
+    if (canvas.width !== w || canvas.height !== h){
+      canvas.width = w; canvas.height = h;
+      return true;
+    }
+    return false;
+  }
+
+  function drawAxes(ctx, w, h, padding, xLabel, yLabel){
+    const grid = getComputedStyle(document.body).getPropertyValue("--grid").trim();
+    const muted = getComputedStyle(document.body).getPropertyValue("--muted").trim();
+
+    ctx.clearRect(0,0,w,h);
+
+    // Grid
+    ctx.strokeStyle = grid;
+    ctx.lineWidth = 1;
+    const nGrid = 6;
+    for (let i=0;i<=nGrid;i++){
+      const y = padding + (h-2*padding) * (i/nGrid);
+      ctx.beginPath(); ctx.moveTo(padding, y); ctx.lineTo(w-padding, y); ctx.stroke();
+    }
+    for (let i=0;i<=nGrid;i++){
+      const x = padding + (w-2*padding) * (i/nGrid);
+      ctx.beginPath(); ctx.moveTo(x, padding); ctx.lineTo(x, h-padding); ctx.stroke();
+    }
+
+    // Labels
+    ctx.fillStyle = muted;
+    ctx.font = `${Math.round(12*(window.devicePixelRatio||1))}px ui-sans-serif, system-ui`;
+    ctx.textAlign = "left";
+    ctx.fillText(xLabel, padding, h - Math.max(6, padding*0.35));
+    ctx.save();
+    ctx.translate(Math.max(6, padding*0.35), padding);
+    ctx.rotate(-Math.PI/2);
+    ctx.textAlign = "left";
+    ctx.fillText(yLabel, 0, 0);
+    ctx.restore();
+
+    // Border
+    const theme = document.body.getAttribute("data-theme");
+    ctx.strokeStyle = (theme === "light") ? "rgba(0,0,0,.10)" : "rgba(255,255,255,.08)";
+    ctx.strokeRect(padding, padding, w-2*padding, h-2*padding);
+  }
+
+  function drawLine(ctx, w, h, padding, xs, ys, xMin, xMax, yMin, yMax){
+    const accent = getComputedStyle(document.body).getPropertyValue("--accent").trim();
+
+    const plotW = (w - 2*padding);
+    const plotH = (h - 2*padding);
+    const xSpan = (xMax - xMin) || 1e-9;
+    const ySpan = (yMax - yMin) || 1e-9;
+
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = Math.max(1, (window.devicePixelRatio||1) * 1.25);
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+
+    ctx.beginPath();
+    let started = false;
+
+    const N = xs.length;
+    const maxPts = 2000;
+    const step = Math.max(1, Math.floor(N / maxPts));
+
+    for (let i=0; i<N; i+=step){
+      const x = xs[i], y = ys[i];
+      const px = padding + ( (x - xMin) / xSpan ) * plotW;
+      const py = padding + (1 - ( (y - yMin) / ySpan )) * plotH;
+      if (!started){ ctx.moveTo(px, py); started = true; }
+      else { ctx.lineTo(px, py); }
+    }
+    ctx.stroke();
+  }
+
+  function getWindowedSeries(){
+    if (tAll.length === 0) return null;
+    const tw = getTimeWindow();
+    const tMax = tAll[tAll.length - 1];
+    const tMinTarget = tMax - tw;
+
+    // binary search first index >= tMinTarget
+    let lo = 0, hi = tAll.length - 1;
+    while (lo < hi){
+      const mid = Math.floor((lo + hi) / 2);
+      if (tAll[mid] < tMinTarget) lo = mid + 1; else hi = mid;
+    }
+    const startIdx = lo;
+
+    const xs = tAll.slice(startIdx);
+    const ys = vAll.slice(startIdx);
+    const ps = pAll.slice(startIdx);
+    return { xs, ys, ps, tMin: xs[0], tMax };
+  }
+
+  function draw(){
+    resizeCanvasToDisplaySize(canvasRaw);
+    resizeCanvasToDisplaySize(canvasProc);
+
+    const padRaw = Math.round(26 * (window.devicePixelRatio||1));
+    const padProc = Math.round(26 * (window.devicePixelRatio||1));
+
+    drawAxes(ctxRaw, canvasRaw.width, canvasRaw.height, padRaw, "Time (s)", "Voltage (V)");
+    drawAxes(ctxProc, canvasProc.width, canvasProc.height, padProc, "Time (s)", "Processed (a.u.)");
+
+    const win = getWindowedSeries();
+    if (!win){
+      requestAnimationFrame(draw);
+      return;
+    }
+
+    const yMin = Math.min(...win.ys);
+    const yMax = Math.max(...win.ys);
+    const margin = (yMax - yMin) * 0.10 || 0.05;
+    const rawYMin = Math.max(0, yMin - margin);
+    const rawYMax = Math.min(3.5, yMax + margin);
+
+    drawLine(ctxRaw, canvasRaw.width, canvasRaw.height, padRaw,
+             win.xs, win.ys, win.tMin, win.tMax, rawYMin, rawYMax);
+
+    const pMin = Math.min(...win.ps);
+    const pShifted = win.ps.map(v => v - pMin);
+    const pYMin = 0;
+    const pYMax = (Math.max(...pShifted) * 1.10) || 1;
+
+    drawLine(ctxProc, canvasProc.width, canvasProc.height, padProc,
+             win.xs, pShifted, win.tMin, win.tMax, pYMin, pYMax);
+
+    updateRateUI();
+    requestAnimationFrame(draw);
+  }
+
+  // ====== CSV ======
+  function downloadCSV(){
+    if (tAll.length === 0) return;
+    const idx = Array.from({length: tAll.length}, (_, i) => i);
+    idx.sort((a,b) => tAll[a] - tAll[b]);
+
+    let csv = "Time,Voltage\n";
+    for (const i of idx){
+      csv += `${tAll[i]},${vAll[i]}\n`;
+    }
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ble_voltage_${new Date().toISOString().replaceAll(":","-")}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // ====== Diagnostics parser ======
+  function parseDiag(dataView){
+    if (dataView.byteLength < 6) return;
+    const ci_units = dataView.getUint16(0, true);
+    const mtu      = dataView.getUint16(2, true);
+    const ci_ms_x10= dataView.getUint16(4, true);
+    const ci_ms = ci_ms_x10 / 10.0;
+    let sl = 0;
+    if (dataView.byteLength >= 8) sl = dataView.getUint16(6, true);
+
+    const eff_ms = ci_ms * (1 + sl);
+    if (sl > 0){
+      diagTextEl.textContent = `CI:${ci_ms.toFixed(1)}ms, SL=${sl}, Eff:${Math.round(eff_ms)}ms, MTU:${mtu}`;
+    } else {
+      const status = (ci_units >= 60) ? "OK" : "REJECTED";
+      diagTextEl.textContent = `Interval: ${ci_ms.toFixed(1)}ms (${status}), MTU:${mtu}`;
+    }
+  }
+
+  // ====== BLE ======
+  let device = null;
+  let server = null;
+  let service = null;
+  let voltageChar = null;
+  let diagChar = null;
+
+  let packetCount = 0;
+  const lenHist = new Map();
+
+  function recordNotifLen(n){
+    lenHist.set(n, (lenHist.get(n) || 0) + 1);
+    let bestLen = null, bestCount = -1;
+    for (const [k,v] of lenHist.entries()){
+      if (v > bestCount){ bestCount = v; bestLen = k; }
+    }
+    notifSizeEl.textContent = (bestLen === null) ? "--" : `${bestLen}B`;
+  }
+
+  function resetState(){
+    rxBuf = new Uint8Array(0);
+    tAll.length = 0; vAll.length = 0; pAll.length = 0;
+    baseline = null;
+    packetCount = 0;
+    lenHist.clear();
+    notifSizeEl.textContent = "--";
+    packetCountEl.textContent = "0";
+    rateHz.textContent = "0";
+    lastRateCheck = performance.now();
+    lastSampleCount = 0;
+    diagTextEl.textContent = "Interval: --";
+  }
+
+  function onDisconnected(){
+    setStatus("bad", "Disconnected");
+    btnConnect.disabled = false;
+    btnDisconnect.disabled = true;
+  }
+
+  async function connect(){
+    if (!navigator.bluetooth){
+      alert("Web Bluetooth not available. Use Chrome on Android (and HTTPS).\n\nNOTE: iOS Safari does not support Web Bluetooth.");
+      return;
+    }
+
+    setStatus("warn", "Requesting device…");
+
+    // FIX: Provide service UUID so this origin is permitted to access it.
+    // Using filters makes selection list only show devices advertising this service.
+    // Use acceptAllDevices to avoid advertisement filtering issues
+    // Some firmware does NOT advertise the custom service UUID,
+    // which causes "Connection attempt failed" when using filters.
+    // Filter by advertised *name prefix* so you don't see hundreds of devices.
+    // NOTE: We do NOT filter by services here because your firmware may not advertise the service UUID.
+    // From your .ino: Bluefruit.setName("Feather52-Volti").
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "Feather52-Volti" }],
+      optionalServices: [SERVICE_UUID],
+    });
+
+    device.addEventListener("gattserverdisconnected", onDisconnected);
+
+    setStatus("warn", "Connecting…");
+    server = await device.gatt.connect();
+
+    setStatus("warn", "Getting service…");
+    service = await server.getPrimaryService(SERVICE_UUID);
+
+    setStatus("warn", "Getting characteristics…");
+    voltageChar = await service.getCharacteristic(VOLTAGE_CHAR_UUID);
+
+    // diag is optional
+    try {
+      diagChar = await service.getCharacteristic(DIAG_CHAR_UUID);
+    } catch (_e) {
+      diagChar = null;
+    }
+
+    resetState();
+
+    setStatus("warn", "Subscribing…");
+    await voltageChar.startNotifications();
+    voltageChar.addEventListener("characteristicvaluechanged", (evt) => {
+      const dv = evt.target.value;
+      const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+      recordNotifLen(bytes.length);
+      appendToRxBuf(bytes);
+
+      const prevSamples = tAll.length;
+      parseFramesFromRxBuf();
+      const newSamples = tAll.length;
+
+      const added = newSamples - prevSamples;
+      if (added > 0){
+        const addedPackets = Math.floor(added / SAMPLES_PER_PACKET);
+        if (addedPackets > 0){
+          packetCount += addedPackets;
+          packetCountEl.textContent = String(packetCount);
+        }
+      }
+    });
+
+    if (diagChar){
+      try {
+        await diagChar.startNotifications();
+        diagChar.addEventListener("characteristicvaluechanged", (evt) => {
+          parseDiag(evt.target.value);
+        });
+
+        // one-time read after a short delay
+        setTimeout(async () => {
+          try {
+            if (diagChar && device?.gatt?.connec
