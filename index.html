@@ -9,148 +9,147 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0a0e17;
-    --surface: #111827;
-    --surface2: #1a2234;
-    --border: #1e293b;
-    --text: #e2e8f0;
-    --text-dim: #64748b;
-    --accent: #22d3ee;
-    --accent-glow: rgba(34, 211, 238, 0.15);
-    --red: #f43f5e;
-    --green: #34d399;
-    --orange: #fb923c;
-  }
+:root {
+  --bg: #0a0e17;
+  --surface: #111827;
+  --surface2: #1a2234;
+  --border: #1e293b;
+  --text: #e2e8f0;
+  --text-dim: #64748b;
+  --accent: #22d3ee;
+  --accent-glow: rgba(34, 211, 238, 0.15);
+  --red: #f43f5e;
+  --green: #34d399;
+  --orange: #fb923c;
+}
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+body::before {
+  content:''; position:fixed; inset:0; pointer-events:none;
+  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(34,211,238,0.04), transparent),
+              radial-gradient(ellipse 60% 40% at 80% 100%, rgba(244,63,94,0.03), transparent);
+}
+.app { position:relative; z-index:1; padding:12px; max-width:600px; margin:0 auto; }
 
-  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* Header */
+.header { display:flex; align-items:center; justify-content:space-between; padding:8px 0 12px; }
+.header-left { display:flex; align-items:center; gap:10px; }
+.logo {
+  width:32px; height:32px; border-radius:8px;
+  background:linear-gradient(135deg, var(--accent), #818cf8);
+  display:flex; align-items:center; justify-content:center;
+  font-family:'JetBrains Mono',monospace; font-weight:700; font-size:13px; color:var(--bg);
+}
+.header-title { font-family:'JetBrains Mono',monospace; font-weight:600; font-size:15px; }
+.header-title span { color:var(--text-dim); font-weight:400; font-size:11px; margin-left:6px; }
 
-  body {
-    font-family: 'DM Sans', sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100dvh;
-    overflow-x: hidden;
-  }
+.status-pill {
+  font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:500;
+  padding:4px 10px; border-radius:20px; white-space:nowrap; transition:all 0.3s;
+  background:rgba(244,63,94,0.12); color:var(--red); border:1px solid rgba(244,63,94,0.2);
+}
+.status-pill.connected { background:rgba(52,211,153,0.12); color:var(--green); border-color:rgba(52,211,153,0.2); }
+.status-pill.connecting { background:rgba(251,146,60,0.12); color:var(--orange); border-color:rgba(251,146,60,0.2); }
 
-  body::before {
-    content: '';
-    position: fixed; inset: 0;
-    background:
-      radial-gradient(ellipse 80% 50% at 50% 0%, rgba(34,211,238,0.04), transparent),
-      radial-gradient(ellipse 60% 40% at 80% 100%, rgba(244,63,94,0.03), transparent);
-    pointer-events: none;
-  }
+/* Connect button */
+.connect-btn {
+  width:100%; padding:14px; border:none; border-radius:12px;
+  font-family:'DM Sans',sans-serif; font-weight:600; font-size:15px;
+  cursor:pointer; transition:all 0.2s;
+  background:linear-gradient(135deg, #22d3ee, #818cf8); color:var(--bg);
+  box-shadow:0 4px 20px rgba(34,211,238,0.25);
+}
+.connect-btn:active { transform:scale(0.98); }
+.connect-btn.stop { background:var(--surface2); color:var(--red); border:1px solid rgba(244,63,94,0.3); box-shadow:none; }
+.connect-btn:disabled { opacity:0.5; cursor:not-allowed; transform:none; }
 
-  .app { position: relative; z-index: 1; padding: 12px; max-width: 600px; margin: 0 auto; }
+/* Stats */
+.stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:12px 0; }
+.stat-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:10px; text-align:center; }
+.stat-label { font-family:'JetBrains Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-dim); margin-bottom:4px; }
+.stat-value { font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:600; }
+.stat-value .u { font-size:10px; font-weight:400; color:var(--text-dim); margin-left:2px; }
 
-  .header { display: flex; align-items: center; justify-content: space-between; padding: 8px 0 12px; }
-  .header-left { display: flex; align-items: center; gap: 10px; }
-  .logo {
-    width: 32px; height: 32px; border-radius: 8px;
-    background: linear-gradient(135deg, var(--accent), #818cf8);
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px; color: var(--bg);
-  }
-  .header-title { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 15px; }
-  .header-title span { color: var(--text-dim); font-weight: 400; font-size: 11px; margin-left: 6px; }
+/* Plot */
+.plot-box {
+  background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  padding:12px 8px 8px; margin:12px 0; position:relative; overflow:hidden;
+}
+.plot-box::before { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--accent),transparent); opacity:0.4; }
+.plot-hdr { display:flex; justify-content:space-between; align-items:center; padding:0 4px 8px; }
+.plot-title { font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.08em; }
+.live-dot { width:6px; height:6px; border-radius:50%; background:var(--red); display:inline-block; margin-right:6px; opacity:0; transition:opacity 0.3s; }
+.live-dot.on { background:var(--green); opacity:1; animation:blink 1.2s ease-in-out infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.plot-v { font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; color:var(--accent); }
+.plot-v .u { font-size:12px; font-weight:400; color:var(--text-dim); }
+canvas { width:100%; height:260px; display:block; border-radius:8px; }
 
-  .status-pill {
-    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500;
-    padding: 4px 10px; border-radius: 20px;
-    background: rgba(244,63,94,0.12); color: var(--red); border: 1px solid rgba(244,63,94,0.2);
-    transition: all 0.3s; white-space: nowrap;
-  }
-  .status-pill.connected { background: rgba(52,211,153,0.12); color: var(--green); border-color: rgba(52,211,153,0.2); }
-  .status-pill.connecting { background: rgba(251,146,60,0.12); color: var(--orange); border-color: rgba(251,146,60,0.2); animation: pulse-border 1.5s ease-in-out infinite; }
-  @keyframes pulse-border { 0%,100%{border-color:rgba(251,146,60,0.2)} 50%{border-color:rgba(251,146,60,0.5)} }
+/* Controls */
+.ctrls { display:flex; gap:8px; margin:12px 0; }
+.cb {
+  flex:1; padding:10px 8px; border:1px solid var(--border); border-radius:10px;
+  background:var(--surface); color:var(--text-dim); font-family:'JetBrains Mono',monospace;
+  font-size:11px; font-weight:500; cursor:pointer; transition:all 0.15s;
+  display:flex; align-items:center; justify-content:center; gap:6px;
+}
+.cb:active { background:var(--surface2); color:var(--text); border-color:var(--accent); }
+.cb svg { width:14px; height:14px; }
 
-  .connect-btn {
-    width: 100%; padding: 14px; border: none; border-radius: 12px;
-    font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: 15px;
-    cursor: pointer; transition: all 0.2s;
-  }
-  .connect-btn.disconnected {
-    background: linear-gradient(135deg, #22d3ee, #818cf8); color: var(--bg);
-    box-shadow: 0 4px 20px rgba(34,211,238,0.25);
-  }
-  .connect-btn.disconnected:active { transform: scale(0.98); }
-  .connect-btn.connected { background: var(--surface2); color: var(--red); border: 1px solid rgba(244,63,94,0.3); }
-  .connect-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Time selector */
+.tsel { display:flex; gap:4px; margin:8px 0; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:4px; }
+.topt {
+  flex:1; padding:7px 0; border:none; border-radius:7px; background:transparent;
+  color:var(--text-dim); font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:500;
+  cursor:pointer; transition:all 0.15s;
+}
+.topt.on { background:var(--accent-glow); color:var(--accent); border:1px solid rgba(34,211,238,0.2); }
 
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
-  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px; text-align: center; }
-  .stat-label { font-family: 'JetBrains Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); margin-bottom: 4px; }
-  .stat-value { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 600; }
-  .stat-value .unit { font-size: 10px; font-weight: 400; color: var(--text-dim); margin-left: 2px; }
+/* Toggle */
+.trow { display:flex; align-items:center; justify-content:space-between; padding:0 2px; margin:6px 0; }
+.tlbl { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-dim); }
+.tgl { width:36px; height:20px; border-radius:10px; background:var(--surface2); border:1px solid var(--border); position:relative; cursor:pointer; transition:all 0.2s; }
+.tgl.on { background:rgba(34,211,238,0.2); border-color:var(--accent); }
+.tgl::after { content:''; width:14px; height:14px; border-radius:50%; background:var(--text-dim); position:absolute; top:2px; left:2px; transition:all 0.2s; }
+.tgl.on::after { left:18px; background:var(--accent); }
 
-  .plot-container {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
-    padding: 12px 8px 8px; margin: 12px 0; position: relative; overflow: hidden;
-  }
-  .plot-container::before { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,var(--accent),transparent); opacity:0.4; }
-  .plot-header { display: flex; justify-content: space-between; align-items: center; padding: 0 4px 8px; }
-  .plot-title { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; }
-  .live-dot { width:6px; height:6px; border-radius:50%; background:var(--red); display:inline-block; margin-right:6px; opacity:0; transition:opacity 0.3s; }
-  .live-dot.active { background:var(--green); opacity:1; animation:blink 1.2s ease-in-out infinite; }
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
-  .plot-voltage { font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; color:var(--accent); }
-  .plot-voltage .unit { font-size:12px; font-weight:400; color:var(--text-dim); }
-  canvas#chart { width:100%; height:260px; display:block; border-radius:8px; }
+/* Diag */
+.diag { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px; margin:12px 0; }
+.diag-t { font-family:'JetBrains Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-dim); margin-bottom:8px; }
+.diag-g { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.di { display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--surface2); border-radius:6px; }
+.dk { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-dim); }
+.dv { font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; }
 
-  .controls { display: flex; gap: 8px; margin: 12px 0; }
-  .ctrl-btn {
-    flex: 1; padding: 10px 8px; border: 1px solid var(--border); border-radius: 10px;
-    background: var(--surface); color: var(--text-dim); font-family: 'JetBrains Mono', monospace;
-    font-size: 11px; font-weight: 500; cursor: pointer; transition: all 0.15s;
-    display: flex; align-items: center; justify-content: center; gap: 6px;
-  }
-  .ctrl-btn:active { background: var(--surface2); color: var(--text); border-color: var(--accent); }
-  .ctrl-btn svg { width: 14px; height: 14px; }
+/* Toast */
+.toast {
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  background:var(--surface2); color:var(--text);
+  font-family:'JetBrains Mono',monospace; font-size:11px; padding:12px 20px;
+  border-radius:12px; z-index:1000; max-width:90vw; text-align:center;
+  opacity:0; pointer-events:none; transition:opacity 0.3s; box-shadow:0 8px 32px rgba(0,0,0,0.5);
+  line-height:1.5; border:1px solid var(--accent);
+}
+.toast.show { opacity:1; pointer-events:auto; }
+.toast.err { border-color:var(--red); }
 
-  .time-selector { display: flex; gap: 4px; margin: 8px 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px; }
-  .time-opt {
-    flex: 1; padding: 7px 0; border: none; border-radius: 7px; background: transparent;
-    color: var(--text-dim); font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500;
-    cursor: pointer; transition: all 0.15s;
-  }
-  .time-opt.active { background: var(--accent-glow); color: var(--accent); border: 1px solid rgba(34,211,238,0.2); }
+/* Debug log */
+.dlog {
+  background:var(--surface); border:1px solid var(--border); border-radius:12px;
+  padding:12px; margin:8px 0; max-height:180px; overflow-y:auto;
+  font-family:'JetBrains Mono',monospace; font-size:10px; line-height:1.7; color:var(--text-dim);
+}
+.dlog .e { color:var(--red); }
+.dlog .g { color:var(--green); }
+.dlog .w { color:var(--orange); }
 
-  .toggle-row { display:flex; align-items:center; justify-content:space-between; padding:0 2px; margin:6px 0; }
-  .toggle-label { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-dim); }
-  .toggle { width:36px; height:20px; border-radius:10px; background:var(--surface2); border:1px solid var(--border); position:relative; cursor:pointer; transition:all 0.2s; }
-  .toggle.on { background:rgba(34,211,238,0.2); border-color:var(--accent); }
-  .toggle::after { content:''; width:14px; height:14px; border-radius:50%; background:var(--text-dim); position:absolute; top:2px; left:2px; transition:all 0.2s; }
-  .toggle.on::after { left:18px; background:var(--accent); }
-
-  .diag-panel { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px; margin:12px 0; }
-  .diag-title { font-family:'JetBrains Mono',monospace; font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-dim); margin-bottom:8px; }
-  .diag-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
-  .diag-item { display:flex; justify-content:space-between; align-items:center; padding:6px 8px; background:var(--surface2); border-radius:6px; }
-  .diag-key { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-dim); }
-  .diag-val { font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; }
-
-  .toast {
-    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
-    background:var(--surface2); border:1px solid var(--red); color:var(--text);
-    font-family:'JetBrains Mono',monospace; font-size:11px; padding:12px 20px;
-    border-radius:12px; z-index:1000; max-width:90vw; text-align:center;
-    opacity:0; pointer-events:none; transition:opacity 0.3s; box-shadow:0 8px 32px rgba(0,0,0,0.5);
-    line-height:1.5;
-  }
-  .toast.show { opacity:1; pointer-events:auto; }
-  .toast.info { border-color: var(--accent); }
-
-  .debug-log {
-    background:var(--surface); border:1px solid var(--border); border-radius:12px;
-    padding:12px; margin:8px 0; max-height:180px; overflow-y:auto;
-    font-family:'JetBrains Mono',monospace; font-size:10px; line-height:1.6; color:var(--text-dim);
-  }
-  .debug-log .err { color:var(--red); }
-  .debug-log .ok { color:var(--green); }
-  .debug-log .warn { color:var(--orange); }
-
-  .footer { text-align:center; padding:16px 0 24px; font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--text-dim); opacity:0.6; }
+.footer { text-align:center; padding:16px 0 24px; font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--text-dim); opacity:0.6; }
 </style>
 </head>
 <body>
@@ -163,289 +162,340 @@
       <div class="logo">A</div>
       <div class="header-title">ANNA Plotter <span>v6</span></div>
     </div>
-    <div class="status-pill" id="statusPill">Disconnected</div>
+    <div class="status-pill" id="pill">Disconnected</div>
   </div>
 
-  <button class="connect-btn disconnected" id="connectBtn">Connect to ANNA</button>
+  <button class="connect-btn" id="btn">Connect to ANNA</button>
 
   <div class="stats">
-    <div class="stat-card"><div class="stat-label">Rate</div><div class="stat-value" id="statRate">--<span class="unit"> Hz</span></div></div>
-    <div class="stat-card"><div class="stat-label">Packets</div><div class="stat-value" id="statPackets">0</div></div>
-    <div class="stat-card"><div class="stat-label">Samples</div><div class="stat-value" id="statSamples">0</div></div>
+    <div class="stat-card"><div class="stat-label">Rate</div><div class="stat-value" id="sRate">--<span class="u"> Hz</span></div></div>
+    <div class="stat-card"><div class="stat-label">Packets</div><div class="stat-value" id="sPkt">0</div></div>
+    <div class="stat-card"><div class="stat-label">Samples</div><div class="stat-value" id="sSmp">0</div></div>
   </div>
 
-  <div class="plot-container">
-    <div class="plot-header">
-      <div><span class="live-dot" id="liveDot"></span><span class="plot-title">Voltage</span></div>
-      <div class="plot-voltage" id="liveVoltage">--<span class="unit"> V</span></div>
+  <div class="plot-box">
+    <div class="plot-hdr">
+      <div><span class="live-dot" id="dot"></span><span class="plot-title">Voltage</span></div>
+      <div class="plot-v" id="lv">--<span class="u"> V</span></div>
     </div>
-    <canvas id="chart"></canvas>
+    <canvas id="c"></canvas>
   </div>
 
-  <div class="time-selector" id="timeSelector">
-    <button class="time-opt" data-sec="5">5s</button>
-    <button class="time-opt active" data-sec="10">10s</button>
-    <button class="time-opt" data-sec="20">20s</button>
-    <button class="time-opt" data-sec="30">30s</button>
-    <button class="time-opt" data-sec="60">60s</button>
+  <div class="tsel" id="tsel">
+    <button class="topt" data-s="5">5s</button>
+    <button class="topt on" data-s="10">10s</button>
+    <button class="topt" data-s="20">20s</button>
+    <button class="topt" data-s="30">30s</button>
+    <button class="topt" data-s="60">60s</button>
   </div>
 
-  <div class="toggle-row">
-    <span class="toggle-label">Auto-scale Y axis</span>
-    <div class="toggle on" id="autoScaleToggle" onclick="this.classList.toggle('on')"></div>
+  <div class="trow">
+    <span class="tlbl">Auto-scale Y axis</span>
+    <div class="tgl on" id="asc"></div>
   </div>
 
-  <div class="controls">
-    <button class="ctrl-btn" id="btnClear">
+  <div class="ctrls">
+    <button class="cb" id="bClr">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2m-7 5v6m4-6v6M5 6l1 14h12l1-14"/></svg>
       Clear
     </button>
-    <button class="ctrl-btn" id="btnSave">
+    <button class="cb" id="bSav">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3"/></svg>
       Save CSV
     </button>
-    <button class="ctrl-btn" id="btnReset">
+    <button class="cb" id="bRst">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/></svg>
       Reset
     </button>
   </div>
 
-  <div class="diag-panel">
-    <div class="diag-title">BLE Diagnostics</div>
-    <div class="diag-grid">
-      <div class="diag-item"><span class="diag-key">Interval</span><span class="diag-val" id="diagCI">--</span></div>
-      <div class="diag-item"><span class="diag-key">MTU</span><span class="diag-val" id="diagMTU">--</span></div>
-      <div class="diag-item"><span class="diag-key">Slave Lat</span><span class="diag-val" id="diagSL">--</span></div>
-      <div class="diag-item"><span class="diag-key">Eff. Rate</span><span class="diag-val" id="diagEff">--</span></div>
+  <div class="diag">
+    <div class="diag-t">BLE Diagnostics</div>
+    <div class="diag-g">
+      <div class="di"><span class="dk">Interval</span><span class="dv" id="dCI">--</span></div>
+      <div class="di"><span class="dk">MTU</span><span class="dv" id="dMTU">--</span></div>
+      <div class="di"><span class="dk">Slave Lat</span><span class="dv" id="dSL">--</span></div>
+      <div class="di"><span class="dk">Eff. Rate</span><span class="dv" id="dEff">--</span></div>
     </div>
   </div>
 
-  <div class="debug-log" id="debugLog"></div>
+  <div class="dlog" id="log"></div>
 
   <div class="footer">Copyright &copy; 2024 Robert Ccorahua-Santo</div>
 </div>
 
 <script>
-/* ═══════════════════════════════════════════════════════════════════
-   CONFIG — matches ANNA B112 firmware v6
-   ═══════════════════════════════════════════════════════════════════ */
-const SERVICE_UUID      = 'cddf1000-30f7-4671-8b43-5e40ba53514a';
-const VOLTAGE_CHAR_UUID = 'cddf1002-30f7-4671-8b43-5e40ba53514a';
-const DIAG_CHAR_UUID    = 'cddf1003-30f7-4671-8b43-5e40ba53514a';
-const SAMPLES_PER_PACKET = 10;
-const SAMPLE_DT          = 0.008;
-const FRAME_SIZE         = 44;
+/* ===========================================================
+   IMMEDIATE TEST — if you see "JS OK" in the log, script runs
+   =========================================================== */
+(function(){
+  var el = document.getElementById('log');
+  el.innerHTML = '<div class="g">[boot] JS loaded OK</div>';
+})();
 
-/* ═══════════════════════════════════════════════════════════════════
-   DEBUG + TOAST
-   ═══════════════════════════════════════════════════════════════════ */
-function log(msg, type) {
-  type = type || '';
-  console.log('[ANNA]', msg);
-  var el = document.getElementById('debugLog');
+/* ===========================================================
+   CONFIG — ANNA B112 firmware v6
+   =========================================================== */
+var SVC  = 'cddf1000-30f7-4671-8b43-5e40ba53514a';
+var VCHAR = 'cddf1002-30f7-4671-8b43-5e40ba53514a';
+var DCHAR = 'cddf1003-30f7-4671-8b43-5e40ba53514a';
+var SPP  = 10;       // samples per packet
+var SDT  = 0.008;    // 8 ms
+var FSZ  = 44;       // frame size
+
+/* ===========================================================
+   HELPERS
+   =========================================================== */
+function L(m, c) {
+  c = c || '';
+  console.log('[ANNA] ' + m);
+  var el = document.getElementById('log');
   var d = document.createElement('div');
-  d.className = type;
-  var ts = new Date().toLocaleTimeString('en-US', {hour12:false});
-  d.textContent = '[' + ts + '] ' + msg;
+  if (c) d.className = c;
+  d.textContent = '[' + new Date().toLocaleTimeString('en-US',{hour12:false}) + '] ' + m;
   el.appendChild(d);
-  el.scrollTop = el.scrollHeight;
+  el.scrollTop = 99999;
 }
 
-var toastTimer = null;
-function showToast(msg, duration, isInfo) {
+var _tt = 0;
+function toast(m, ms, err) {
   var t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = 'toast show' + (isInfo ? ' info' : '');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(function(){ t.classList.remove('show'); }, duration || 4000);
+  t.textContent = m;
+  t.className = 'toast show' + (err ? ' err' : '');
+  clearTimeout(_tt);
+  _tt = setTimeout(function(){ t.className = 'toast'; }, ms || 4000);
 }
 
-/* ═══════════════════════════════════════════════════════════════════
+/* ===========================================================
    STATE
-   ═══════════════════════════════════════════════════════════════════ */
-var bleDevice = null, bleServer = null, voltageChar = null, diagChar = null;
-var isConnected = false;
-var xData = [], yData = [];
-var MAX_POINTS = 20000;
-var rxBuf = new Uint8Array(0);
-var packetCount = 0, sampleCount = 0;
-var rateTracker = { lastCount: 0, lastTime: performance.now(), rate: 0 };
-var timeWindow = 10;
-var animFrame = null;
+   =========================================================== */
+var dev = null, srv = null, vch = null, dch = null;
+var on = false;
+var xD = [], yD = [];
+var MX = 20000;
+var rx = new Uint8Array(0);
+var nPkt = 0, nSmp = 0;
+var rT = { n: 0, t: performance.now(), r: 0 };
+var tWin = 10;
+var af = null;
 
-/* ═══════════════════════════════════════════════════════════════════
-   STARTUP CHECKS
-   ═══════════════════════════════════════════════════════════════════ */
-log('Page loaded');
-log('URL: ' + location.href);
-log('Secure context: ' + !!window.isSecureContext, window.isSecureContext ? 'ok' : 'err');
-log('navigator.bluetooth: ' + !!navigator.bluetooth, navigator.bluetooth ? 'ok' : 'err');
-log('User agent: ' + navigator.userAgent.substring(0, 80));
+/* ===========================================================
+   BOOT CHECKS
+   =========================================================== */
+L('URL: ' + location.href);
+L('Secure: ' + !!window.isSecureContext, window.isSecureContext ? 'g' : 'e');
+L('BLE API: ' + !!navigator.bluetooth, navigator.bluetooth ? 'g' : 'e');
 
 if (!window.isSecureContext) {
-  log('NOT SECURE — BLE needs HTTPS or localhost!', 'err');
-  showToast('Needs HTTPS! Deploy to GitHub Pages or use localhost.', 10000);
+  L('ERROR: Page not served over HTTPS!', 'e');
+  toast('Needs HTTPS! Use GitHub Pages URL, not raw github.com', 10000, true);
 }
 if (!navigator.bluetooth) {
-  log('Web Bluetooth API missing!', 'err');
-  showToast('Web Bluetooth not available. Use Chrome on Android or desktop.', 10000);
+  L('ERROR: navigator.bluetooth missing', 'e');
+  toast('Web Bluetooth not available in this browser', 10000, true);
 }
 
-/* ═══════════════════════════════════════════════════════════════════
+/* ===========================================================
    TIME WINDOW
-   ═══════════════════════════════════════════════════════════════════ */
-document.getElementById('timeSelector').addEventListener('click', function(e) {
-  var btn = e.target.closest('.time-opt');
-  if (!btn) return;
-  var all = document.querySelectorAll('.time-opt');
-  for (var i = 0; i < all.length; i++) all[i].classList.remove('active');
-  btn.classList.add('active');
-  timeWindow = parseInt(btn.getAttribute('data-sec'));
+   =========================================================== */
+document.getElementById('tsel').addEventListener('click', function(e) {
+  var b = e.target;
+  if (!b.classList.contains('topt')) return;
+  var all = document.querySelectorAll('.topt');
+  for (var i = 0; i < all.length; i++) all[i].classList.remove('on');
+  b.classList.add('on');
+  tWin = parseInt(b.getAttribute('data-s'));
 });
 
-/* ═══════════════════════════════════════════════════════════════════
-   CONNECT BUTTON
-   ═══════════════════════════════════════════════════════════════════ */
-document.getElementById('connectBtn').addEventListener('click', function() {
-  log('>>> Button tapped');
+/* ===========================================================
+   AUTOSCALE TOGGLE
+   =========================================================== */
+document.getElementById('asc').addEventListener('click', function() {
+  this.classList.toggle('on');
+});
 
-  if (isConnected) {
-    log('Disconnecting...');
-    doDisconnect();
+/* ===========================================================
+   CONNECT / DISCONNECT
+   =========================================================== */
+document.getElementById('btn').addEventListener('click', function() {
+  L('Button tapped', 'g');
+
+  if (on) {
+    on = false;
+    try { if (dev && dev.gatt.connected) dev.gatt.disconnect(); } catch(e){}
+    setUI(false);
     return;
   }
 
   if (!navigator.bluetooth) {
-    showToast('Web Bluetooth not available. Use Chrome + HTTPS.', 5000);
-    log('Abort: no navigator.bluetooth', 'err');
-    return;
-  }
-  if (!window.isSecureContext) {
-    showToast('Needs HTTPS! Deploy to GitHub Pages or use localhost.', 5000);
-    log('Abort: not secure context', 'err');
+    toast('No Web Bluetooth. Use Chrome + HTTPS.', 5000, true);
+    L('Abort: no BLE API', 'e');
     return;
   }
 
-  var btn = document.getElementById('connectBtn');
-  var pill = document.getElementById('statusPill');
-
+  var btn = document.getElementById('btn');
+  var pill = document.getElementById('pill');
   btn.disabled = true;
   btn.textContent = 'Scanning...';
   pill.textContent = 'Scanning';
   pill.className = 'status-pill connecting';
-  log('Calling requestDevice...');
+  L('requestDevice...');
 
   navigator.bluetooth.requestDevice({
-    filters: [{ services: [SERVICE_UUID] }],
-    optionalServices: [SERVICE_UUID]
+    filters: [{ services: [SVC] }]
   })
-  .then(function(device) {
-    bleDevice = device;
-    log('Device selected: ' + (device.name || device.id), 'ok');
-    device.addEventListener('gattserverdisconnected', onDisconnected);
-
+  .then(function(d) {
+    dev = d;
+    L('Got device: ' + (d.name || d.id), 'g');
+    d.addEventListener('gattserverdisconnected', function(){ setUI(false); });
     pill.textContent = 'Connecting';
     btn.textContent = 'Connecting...';
-    log('Connecting GATT...');
-    return device.gatt.connect();
+    L('GATT connect...');
+    return d.gatt.connect();
   })
-  .then(function(server) {
-    bleServer = server;
-    log('GATT connected', 'ok');
-    log('Getting service...');
-    return server.getPrimaryService(SERVICE_UUID);
+  .then(function(s) {
+    srv = s;
+    L('GATT OK', 'g');
+    return s.getPrimaryService(SVC);
   })
-  .then(function(service) {
-    log('Service found', 'ok');
-    log('Getting voltage char...');
-    return service.getCharacteristic(VOLTAGE_CHAR_UUID).then(function(ch) {
-      voltageChar = ch;
-      log('Starting voltage notifications...');
+  .then(function(svc) {
+    L('Service OK', 'g');
+    return svc.getCharacteristic(VCHAR).then(function(ch) {
+      vch = ch;
+      L('Voltage char OK', 'g');
       return ch.startNotifications().then(function() {
-        ch.addEventListener('characteristicvaluechanged', onVoltageData);
-        log('Voltage notifications ON', 'ok');
-        return service;
+        ch.addEventListener('characteristicvaluechanged', onV);
+        L('Voltage notify ON', 'g');
+        return svc;
       });
     });
   })
-  .then(function(service) {
-    // Try diagnostic (optional)
-    return service.getCharacteristic(DIAG_CHAR_UUID).then(function(ch) {
-      diagChar = ch;
+  .then(function(svc) {
+    return svc.getCharacteristic(DCHAR).then(function(ch) {
+      dch = ch;
       return ch.startNotifications().then(function() {
-        ch.addEventListener('characteristicvaluechanged', onDiagData);
-        log('Diag notifications ON', 'ok');
-        setTimeout(function() {
-          if (diagChar) {
-            diagChar.readValue().then(parseDiag).catch(function(){});
-          }
+        ch.addEventListener('characteristicvaluechanged', onD);
+        L('Diag notify ON', 'g');
+        setTimeout(function(){
+          try { dch.readValue().then(parseD).catch(function(){}); } catch(e){}
         }, 6000);
       });
     }).catch(function(e) {
-      log('Diag char not available (OK): ' + e.message, 'warn');
+      L('Diag skip: ' + e.message, 'w');
     });
   })
   .then(function() {
-    isConnected = true;
-    pill.textContent = 'Connected';
-    pill.className = 'status-pill connected';
-    btn.textContent = 'Disconnect';
-    btn.className = 'connect-btn connected';
-    btn.disabled = false;
-    document.getElementById('liveDot').classList.add('active');
-    showToast('Connected to ' + (bleDevice.name || 'device'), 2000, true);
-
-    packetCount = 0; sampleCount = 0;
-    rateTracker = { lastCount: 0, lastTime: performance.now(), rate: 0 };
-    rxBuf = new Uint8Array(0);
-    startRenderLoop();
+    on = true;
+    setUI(true);
+    toast('Connected to ' + (dev.name || 'device'), 2000);
+    nPkt = 0; nSmp = 0;
+    rT = { n: 0, t: performance.now(), r: 0 };
+    rx = new Uint8Array(0);
+    startLoop();
   })
   .catch(function(err) {
-    log('ERROR: ' + err.name + ': ' + err.message, 'err');
+    L('FAIL: ' + err.name + ' — ' + err.message, 'e');
+    if (err.name === 'NotFoundError')
+      toast('Cancelled or no device found. Is ANNA on?', 5000, true);
+    else if (err.name === 'SecurityError')
+      toast('SecurityError — needs HTTPS', 5000, true);
+    else if (err.name === 'NetworkError')
+      toast('Connection failed. ANNA in range?', 5000, true);
+    else
+      toast(err.message, 5000, true);
 
-    if (err.name === 'NotFoundError') {
-      showToast('Cancelled or no device found. Is ANNA powered on?', 5000);
-    } else if (err.name === 'SecurityError') {
-      showToast('Blocked! Needs HTTPS — deploy to GitHub Pages.', 5000);
-    } else if (err.name === 'NetworkError') {
-      showToast('Connection failed. Is ANNA in range / not connected elsewhere?', 5000);
-    } else {
-      showToast('Error: ' + err.message, 5000);
-    }
-
+    btn.disabled = false;
+    btn.textContent = 'Connect to ANNA';
+    btn.className = 'connect-btn';
     pill.textContent = 'Failed';
     pill.className = 'status-pill';
-    btn.textContent = 'Connect to ANNA';
-    btn.className = 'connect-btn disconnected';
-    btn.disabled = false;
   });
 });
 
-function doDisconnect() {
-  isConnected = false;
-  try { if (bleDevice && bleDevice.gatt.connected) bleDevice.gatt.disconnect(); } catch(e) {}
-  onDisconnected();
+function setUI(connected) {
+  var btn = document.getElementById('btn');
+  var pill = document.getElementById('pill');
+  var dot = document.getElementById('dot');
+  if (connected) {
+    btn.disabled = false;
+    btn.textContent = 'Disconnect';
+    btn.className = 'connect-btn stop';
+    pill.textContent = 'Connected';
+    pill.className = 'status-pill connected';
+    dot.classList.add('on');
+  } else {
+    on = false;
+    btn.disabled = false;
+    btn.textContent = 'Connect to ANNA';
+    btn.className = 'connect-btn';
+    pill.textContent = 'Disconnected';
+    pill.className = 'status-pill';
+    dot.classList.remove('on');
+    if (af) { cancelAnimationFrame(af); af = null; }
+    L('Disconnected');
+  }
 }
 
-function onDisconnected() {
-  isConnected = false;
-  var btn = document.getElementById('connectBtn');
-  var pill = document.getElementById('statusPill');
-  btn.textContent = 'Connect to ANNA';
-  btn.className = 'connect-btn disconnected';
-  btn.disabled = false;
-  pill.textContent = 'Disconnected';
-  pill.className = 'status-pill';
-  document.getElementById('liveDot').classList.remove('active');
-  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
-  log('Disconnected');
+/* ===========================================================
+   BLE DATA — v6 44-byte frames
+   =========================================================== */
+function onV(ev) {
+  var inc = new Uint8Array(ev.target.value.buffer);
+  var tmp = new Uint8Array(rx.length + inc.length);
+  tmp.set(rx); tmp.set(inc, rx.length); rx = tmp;
+
+  while (rx.length >= FSZ) {
+    var fr = rx.slice(0, FSZ);
+    rx = rx.slice(FSZ);
+    var dv = new DataView(fr.buffer);
+    var t0 = dv.getFloat32(0, true);
+    for (var i = 0; i < SPP; i++) {
+      xD.push(t0 + i * SDT);
+      yD.push(dv.getFloat32(4 + i * 4, true));
+      nSmp++;
+    }
+    nPkt++;
+  }
+  if (xD.length > MX) { var ex = xD.length - MX; xD.splice(0, ex); yD.splice(0, ex); }
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   BLE DATA — v6 frame protocol (44 bytes)
-   ═══════════════════════════════════════════════════════════════════ */
-function onVoltageData(event) {
-  var incoming = new Uint8Array(event.target.value.buffer);
-  var combined = new Uint8Array(rxBuf.length + incoming.length);
-  combined.set(rxBuf);
-  combined.set(in
+/* ===========================================================
+   DIAGNOSTIC
+   =========================================================== */
+function onD(ev) { parseD(ev.target.value); }
+function parseD(dv) {
+  if (dv.byteLength < 6) return;
+  var ci = dv.getUint16(0, true);
+  var mtu = dv.getUint16(2, true);
+  var cx10 = dv.getUint16(4, true);
+  var ms = cx10 / 10;
+  var sl = dv.byteLength >= 8 ? dv.getUint16(6, true) : 0;
+  var eff = ms * (1 + sl);
+  document.getElementById('dCI').textContent = ms.toFixed(1) + ' ms';
+  document.getElementById('dMTU').textContent = mtu;
+  document.getElementById('dSL').textContent = sl;
+  document.getElementById('dEff').textContent = eff.toFixed(0) + ' ms';
+  document.getElementById('dCI').style.color = sl > 0 ? (eff >= 50 ? 'var(--green)' : 'var(--orange)') : (ci >= 60 ? 'var(--green)' : 'var(--red)');
+  L('Diag CI=' + ms + 'ms MTU=' + mtu + ' SL=' + sl, 'g');
+}
+
+/* ===========================================================
+   CANVAS
+   =========================================================== */
+var cv = document.getElementById('c');
+var cx = cv.getContext('2d');
+
+function rsz() {
+  var r = cv.parentElement.getBoundingClientRect();
+  var d = window.devicePixelRatio || 1;
+  cv.width = (r.width - 16) * d;
+  cv.height = 260 * d;
+  cv.style.width = (r.width - 16) + 'px';
+  cv.style.height = '260px';
+  cx.setTransform(d, 0, 0, d, 0, 0);
+}
+rsz();
+window.addEventListener('resize', rsz);
+
+function draw() {
+  var W = cv.wid
