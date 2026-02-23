@@ -45,9 +45,7 @@
       display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
       margin-bottom:12px;
     }
-    .title{
-      display:flex;flex-direction:column;gap:2px;
-    }
+    .title{display:flex;flex-direction:column;gap:2px;}
     h1{font-size:18px;margin:0;letter-spacing:.2px}
     .sub{font-size:12px;color:var(--muted);line-height:1.4}
     .panel{
@@ -91,9 +89,7 @@
       background:linear-gradient(180deg, rgba(255,77,77,.22), rgba(255,77,77,.08));
       border-color:rgba(255,77,77,.35);
     }
-    button:disabled{
-      opacity:.55; cursor:not-allowed;
-    }
+    button:disabled{opacity:.55; cursor:not-allowed;}
 
     .pill{
       font-size:12px;
@@ -111,11 +107,7 @@
     .dot.bad{background:var(--bad)}
     .dot.warn{background:var(--warn)}
 
-    .grid{
-      display:grid;
-      grid-template-columns: 1fr;
-      gap:12px;
-    }
+    .grid{display:grid;grid-template-columns: 1fr;gap:12px;}
     .plot-panel{padding:12px}
     .plot-head{
       display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;
@@ -134,9 +126,7 @@
     [data-theme="light"] .plot{background:rgba(0,0,0,.03);border-color:rgba(0,0,0,.08)}
     .plot.small{height:220px}
 
-    .row{
-      display:flex;gap:10px;flex-wrap:wrap;align-items:center;
-    }
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
     label{font-size:12px;color:var(--muted)}
     input[type="number"]{
       width:88px;
@@ -148,11 +138,8 @@
       outline:none;
     }
     [data-theme="light"] input[type="number"]{border-color:rgba(0,0,0,.10);background:rgba(0,0,0,.03)}
-    .footer{
-      margin-top:10px;
-      font-size:12px;color:var(--muted);
-      line-height:1.4;
-    }
+
+    .footer{margin-top:10px;font-size:12px;color:var(--muted);line-height:1.4;}
     code{
       background:rgba(255,255,255,.06);
       padding:2px 6px;border-radius:8px;
@@ -229,21 +216,25 @@
     </div>
 
     <div class="footer">
-      Uses UUIDs from your Python GUI: voltage char <code>cddf1002-30f7-4671-8b43-5e40ba53514a</code>,
-      diag char <code>cddf1003-30f7-4671-8b43-5e40ba53514a</code>. :contentReference[oaicite:3]{index=3}
+      Service: <code>cddf1000-30f7-4671-8b43-5e40ba53514a</code> •
+      Voltage: <code>cddf1002-30f7-4671-8b43-5e40ba53514a</code> •
+      Diag: <code>cddf1003-30f7-4671-8b43-5e40ba53514a</code>
     </div>
   </div>
 
 <script>
 (() => {
-  // ====== BLE UUIDs (from your Python GUI) ======
+  // ====== BLE UUIDs (FIXED for Web Bluetooth origin permissions) ======
+  // IMPORTANT: SERVICE_UUID must be present in requestDevice() (filters or optionalServices)
+  // otherwise Chrome will show: "Origin is not allowed to access any service".
+  const SERVICE_UUID      = "cddf1000-30f7-4671-8b43-5e40ba53514a";
   const VOLTAGE_CHAR_UUID = "cddf1002-30f7-4671-8b43-5e40ba53514a";
   const DIAG_CHAR_UUID    = "cddf1003-30f7-4671-8b43-5e40ba53514a";
 
   // v6 frame format: 44 bytes = 11 float32 LE: [t_start] + [10 voltages]
   const FRAME_SIZE = 44;
   const SAMPLES_PER_PACKET = 10;
-  const SAMPLE_DT = 0.008; // seconds (as in your GUI)
+  const SAMPLE_DT = 0.008; // seconds
 
   // ====== UI ======
   const el = (id) => document.getElementById(id);
@@ -272,21 +263,18 @@
   }
 
   // ====== Data buffers ======
-  // We keep full arrays for CSV and windowed view for plotting.
   const tAll = [];
   const vAll = [];
-  const pAll = []; // processed
+  const pAll = [];
 
-  // For plotting window only, we will find the last points within timeWindow.
   function getTimeWindow(){
     const v = Number(timeWindowInput.value);
     return (Number.isFinite(v) && v > 0) ? v : 10;
   }
 
-  // ====== Baseline removal (simple & robust) ======
-  // EMA baseline, then (v - baseline) shifted to >=0 using recent min.
+  // ====== Baseline removal ======
   let baseline = null;
-  const BASELINE_ALPHA = 0.01; // smaller = slower baseline (good for pulse)
+  const BASELINE_ALPHA = 0.01;
   function processSample(v){
     if (baseline === null) baseline = v;
     baseline = (1 - BASELINE_ALPHA) * baseline + BASELINE_ALPHA * v;
@@ -296,7 +284,6 @@
   // ====== Rate tracking ======
   let lastRateCheck = performance.now();
   let lastSampleCount = 0;
-
   function updateRateUI(){
     const now = performance.now();
     if (now - lastRateCheck >= 1000){
@@ -308,7 +295,7 @@
     }
   }
 
-  // ====== Frame-safe byte buffering (robust to split/coalesced notifications) ======
+  // ====== RX buffering ======
   let rxBuf = new Uint8Array(0);
   function appendToRxBuf(chunk){
     const merged = new Uint8Array(rxBuf.length + chunk.length);
@@ -319,29 +306,24 @@
   function dropFromRxBuf(n){
     rxBuf = rxBuf.slice(n);
   }
-
   function parseFramesFromRxBuf(){
-    // parse as many whole 44-byte frames as possible
     while (rxBuf.length >= FRAME_SIZE){
       const frame = rxBuf.slice(0, FRAME_SIZE);
       dropFromRxBuf(FRAME_SIZE);
 
       const dv = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
-      // 11 float32 LE
       const tStart = dv.getFloat32(0, true);
       for (let i = 0; i < SAMPLES_PER_PACKET; i++){
         const v = dv.getFloat32(4 + i*4, true);
         const t = tStart + i * SAMPLE_DT;
         tAll.push(t);
         vAll.push(v);
-
-        const proc = processSample(v);
-        pAll.push(proc);
+        pAll.push(processSample(v));
       }
     }
   }
 
-  // ====== Plotting (Canvas) ======
+  // ====== Plotting ======
   function resizeCanvasToDisplaySize(canvas){
     const {width, height} = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
@@ -355,21 +337,14 @@
   }
 
   function drawAxes(ctx, w, h, padding, xLabel, yLabel){
-    const theme = document.body.getAttribute("data-theme");
     const grid = getComputedStyle(document.body).getPropertyValue("--grid").trim();
-    const fg = getComputedStyle(document.body).getPropertyValue("--fg").trim();
     const muted = getComputedStyle(document.body).getPropertyValue("--muted").trim();
 
     ctx.clearRect(0,0,w,h);
 
-    // Background subtle
-    ctx.fillStyle = (theme === "light") ? "rgba(0,0,0,0.00)" : "rgba(0,0,0,0.00)";
-    ctx.fillRect(0,0,w,h);
-
     // Grid
     ctx.strokeStyle = grid;
     ctx.lineWidth = 1;
-
     const nGrid = 6;
     for (let i=0;i<=nGrid;i++){
       const y = padding + (h-2*padding) * (i/nGrid);
@@ -393,6 +368,7 @@
     ctx.restore();
 
     // Border
+    const theme = document.body.getAttribute("data-theme");
     ctx.strokeStyle = (theme === "light") ? "rgba(0,0,0,.10)" : "rgba(255,255,255,.08)";
     ctx.strokeRect(padding, padding, w-2*padding, h-2*padding);
   }
@@ -402,7 +378,6 @@
 
     const plotW = (w - 2*padding);
     const plotH = (h - 2*padding);
-
     const xSpan = (xMax - xMin) || 1e-9;
     const ySpan = (yMax - yMin) || 1e-9;
 
@@ -411,10 +386,9 @@
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
 
-    let started = false;
     ctx.beginPath();
+    let started = false;
 
-    // Downsample for speed: keep at most ~2000 points on screen
     const N = xs.length;
     const maxPts = 2000;
     const step = Math.max(1, Math.floor(N / maxPts));
@@ -423,13 +397,8 @@
       const x = xs[i], y = ys[i];
       const px = padding + ( (x - xMin) / xSpan ) * plotW;
       const py = padding + (1 - ( (y - yMin) / ySpan )) * plotH;
-
-      if (!started){
-        ctx.moveTo(px, py);
-        started = true;
-      } else {
-        ctx.lineTo(px, py);
-      }
+      if (!started){ ctx.moveTo(px, py); started = true; }
+      else { ctx.lineTo(px, py); }
     }
     ctx.stroke();
   }
@@ -438,20 +407,19 @@
     if (tAll.length === 0) return null;
     const tw = getTimeWindow();
     const tMax = tAll[tAll.length - 1];
-    const tMin = tMax - tw;
+    const tMinTarget = tMax - tw;
 
-    // find first index >= tMin (linear scan from end is OK for small arrays; we do a binary search)
+    // binary search first index >= tMinTarget
     let lo = 0, hi = tAll.length - 1;
     while (lo < hi){
       const mid = Math.floor((lo + hi) / 2);
-      if (tAll[mid] < tMin) lo = mid + 1; else hi = mid;
+      if (tAll[mid] < tMinTarget) lo = mid + 1; else hi = mid;
     }
     const startIdx = lo;
 
     const xs = tAll.slice(startIdx);
     const ys = vAll.slice(startIdx);
     const ps = pAll.slice(startIdx);
-
     return { xs, ys, ps, tMin: xs[0], tMax };
   }
 
@@ -462,15 +430,15 @@
     const padRaw = Math.round(26 * (window.devicePixelRatio||1));
     const padProc = Math.round(26 * (window.devicePixelRatio||1));
 
-    // Raw
     drawAxes(ctxRaw, canvasRaw.width, canvasRaw.height, padRaw, "Time (s)", "Voltage (V)");
-    // Processed
     drawAxes(ctxProc, canvasProc.width, canvasProc.height, padProc, "Time (s)", "Processed (a.u.)");
 
     const win = getWindowedSeries();
-    if (!win) return;
+    if (!win){
+      requestAnimationFrame(draw);
+      return;
+    }
 
-    // Raw y autoscale based on recent window (like your Python GUI)
     const yMin = Math.min(...win.ys);
     const yMax = Math.max(...win.ys);
     const margin = (yMax - yMin) * 0.10 || 0.05;
@@ -480,11 +448,10 @@
     drawLine(ctxRaw, canvasRaw.width, canvasRaw.height, padRaw,
              win.xs, win.ys, win.tMin, win.tMax, rawYMin, rawYMax);
 
-    // Processed: shift to >=0 using recent min
     const pMin = Math.min(...win.ps);
     const pShifted = win.ps.map(v => v - pMin);
     const pYMin = 0;
-    const pYMax = Math.max(...pShifted) * 1.10 || 1;
+    const pYMax = (Math.max(...pShifted) * 1.10) || 1;
 
     drawLine(ctxProc, canvasProc.width, canvasProc.height, padProc,
              win.xs, pShifted, win.tMin, win.tMax, pYMin, pYMax);
@@ -493,10 +460,9 @@
     requestAnimationFrame(draw);
   }
 
-  // ====== CSV download ======
+  // ====== CSV ======
   function downloadCSV(){
     if (tAll.length === 0) return;
-    // Sort by time (you do this in Python before saving)
     const idx = Array.from({length: tAll.length}, (_, i) => i);
     idx.sort((a,b) => tAll[a] - tAll[b]);
 
@@ -515,27 +481,8 @@
     URL.revokeObjectURL(url);
   }
 
-  // ====== BLE connection ======
-  let device = null;
-  let server = null;
-  let voltageChar = null;
-  let diagChar = null;
-
-  let packetCount = 0;
-  const lenHist = new Map(); // notif length -> count
-
-  function recordNotifLen(n){
-    lenHist.set(n, (lenHist.get(n) || 0) + 1);
-    // display the most common size
-    let bestLen = null, bestCount = -1;
-    for (const [k,v] of lenHist.entries()){
-      if (v > bestCount){ bestCount = v; bestLen = k; }
-    }
-    notifSizeEl.textContent = (bestLen === null) ? "--" : `${bestLen}B`;
-  }
-
+  // ====== Diagnostics parser ======
   function parseDiag(dataView){
-    // [u16 ci_units][u16 mtu][u16 ci_ms_x10][u16 slave_latency]
     if (dataView.byteLength < 6) return;
     const ci_units = dataView.getUint16(0, true);
     const mtu      = dataView.getUint16(2, true);
@@ -553,53 +500,26 @@
     }
   }
 
-  async function connect(){
-    if (!navigator.bluetooth){
-      alert("Web Bluetooth not available. Use Chrome on Android (and HTTPS).");
-      return;
+  // ====== BLE ======
+  let device = null;
+  let server = null;
+  let service = null;
+  let voltageChar = null;
+  let diagChar = null;
+
+  let packetCount = 0;
+  const lenHist = new Map();
+
+  function recordNotifLen(n){
+    lenHist.set(n, (lenHist.get(n) || 0) + 1);
+    let bestLen = null, bestCount = -1;
+    for (const [k,v] of lenHist.entries()){
+      if (v > bestCount){ bestCount = v; bestLen = k; }
     }
+    notifSizeEl.textContent = (bestLen === null) ? "--" : `${bestLen}B`;
+  }
 
-    setStatus("warn", "Requesting device…");
-
-    // Important: requestDevice must be called from a user gesture (button click)
-    device = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
-      optionalServices: [
-        // we don't know your service UUID here; optionalServices allows access if needed
-        // If you know your custom service UUID, add it here for more reliable access.
-      ]
-    });
-
-    device.addEventListener("gattserverdisconnected", onDisconnected);
-
-    setStatus("warn", "Connecting…");
-    server = await device.gatt.connect();
-
-    // Discover characteristics by scanning all primary services.
-    // This is slower but avoids hardcoding your service UUID.
-    setStatus("warn", "Discovering services…");
-    const services = await server.getPrimaryServices();
-
-    let foundV = null;
-    let foundD = null;
-
-    for (const s of services){
-      const chars = await s.getCharacteristics();
-      for (const c of chars){
-        const uuid = c.uuid.toLowerCase();
-        if (uuid === VOLTAGE_CHAR_UUID) foundV = c;
-        if (uuid === DIAG_CHAR_UUID) foundD = c;
-      }
-    }
-
-    if (!foundV){
-      throw new Error("Voltage characteristic not found. If you know your Service UUID, add it to optionalServices for reliability.");
-    }
-
-    voltageChar = foundV;
-    diagChar = foundD || null;
-
-    // reset buffers / counters
+  function resetState(){
     rxBuf = new Uint8Array(0);
     tAll.length = 0; vAll.length = 0; pAll.length = 0;
     baseline = null;
@@ -611,66 +531,6 @@
     lastRateCheck = performance.now();
     lastSampleCount = 0;
     diagTextEl.textContent = "Interval: --";
-
-    // notifications
-    setStatus("warn", "Subscribing…");
-    await voltageChar.startNotifications();
-    voltageChar.addEventListener("characteristicvaluechanged", (evt) => {
-      const dv = evt.target.value; // DataView
-      const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
-
-      recordNotifLen(bytes.length);
-
-      appendToRxBuf(bytes);
-
-      // Parse whole frames
-      const before = Math.floor(rxBuf.length / FRAME_SIZE);
-      parseFramesFromRxBuf();
-      const after = Math.floor(rxBuf.length / FRAME_SIZE);
-
-      // Packet count = number of frames parsed (each frame contains 10 samples)
-      // We can approximate by counting how many complete frames were removed.
-      // Better: update based on sample count change:
-      // Each packet adds 10 samples. If sample count increased by 10*k, packetCount += k.
-      // We'll do that via delta:
-      const n = tAll.length;
-      const k = Math.floor(n / SAMPLES_PER_PACKET) - packetCount;
-      if (k > 0){
-        packetCount += k;
-        packetCountEl.textContent = String(packetCount);
-      }
-    });
-
-    // diag notifications (optional)
-    if (diagChar){
-      try{
-        await diagChar.startNotifications();
-        diagChar.addEventListener("characteristicvaluechanged", (evt) => {
-          parseDiag(evt.target.value);
-        });
-
-        // Also try a one-time read after ~6s like your Python code
-        setTimeout(async () => {
-          try{
-            if (diagChar && device?.gatt?.connected){
-              const dv = await diagChar.readValue();
-              parseDiag(dv);
-            }
-          }catch(_e){}
-        }, 6000);
-      }catch(_e){
-        // ok if firmware doesn't support it reliably
-      }
-    }
-
-    setStatus("ok", `Connected: ${device.name || "BLE device"}`);
-    btnConnect.disabled = true;
-    btnDisconnect.disabled = false;
-    btnClear.disabled = false;
-    btnSave.disabled = false;
-
-    // kick off render loop
-    requestAnimationFrame(draw);
   }
 
   function onDisconnected(){
@@ -679,33 +539,102 @@
     btnDisconnect.disabled = true;
   }
 
+  async function connect(){
+    if (!navigator.bluetooth){
+      alert("Web Bluetooth not available. Use Chrome on Android (and HTTPS).\n\nNOTE: iOS Safari does not support Web Bluetooth.");
+      return;
+    }
+
+    setStatus("warn", "Requesting device…");
+
+    // FIX: Provide service UUID so this origin is permitted to access it.
+    // Using filters makes selection list only show devices advertising this service.
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERVICE_UUID] }],
+      optionalServices: [SERVICE_UUID],
+    });
+
+    device.addEventListener("gattserverdisconnected", onDisconnected);
+
+    setStatus("warn", "Connecting…");
+    server = await device.gatt.connect();
+
+    setStatus("warn", "Getting service…");
+    service = await server.getPrimaryService(SERVICE_UUID);
+
+    setStatus("warn", "Getting characteristics…");
+    voltageChar = await service.getCharacteristic(VOLTAGE_CHAR_UUID);
+
+    // diag is optional
+    try {
+      diagChar = await service.getCharacteristic(DIAG_CHAR_UUID);
+    } catch (_e) {
+      diagChar = null;
+    }
+
+    resetState();
+
+    setStatus("warn", "Subscribing…");
+    await voltageChar.startNotifications();
+    voltageChar.addEventListener("characteristicvaluechanged", (evt) => {
+      const dv = evt.target.value;
+      const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+      recordNotifLen(bytes.length);
+      appendToRxBuf(bytes);
+
+      const prevSamples = tAll.length;
+      parseFramesFromRxBuf();
+      const newSamples = tAll.length;
+
+      const added = newSamples - prevSamples;
+      if (added > 0){
+        const addedPackets = Math.floor(added / SAMPLES_PER_PACKET);
+        if (addedPackets > 0){
+          packetCount += addedPackets;
+          packetCountEl.textContent = String(packetCount);
+        }
+      }
+    });
+
+    if (diagChar){
+      try {
+        await diagChar.startNotifications();
+        diagChar.addEventListener("characteristicvaluechanged", (evt) => {
+          parseDiag(evt.target.value);
+        });
+
+        // one-time read after a short delay
+        setTimeout(async () => {
+          try {
+            if (diagChar && device?.gatt?.connected){
+              const dv = await diagChar.readValue();
+              parseDiag(dv);
+            }
+          } catch (_e) {}
+        }, 1500);
+      } catch (_e) {}
+    }
+
+    setStatus("ok", `Connected: ${device.name || "BLE device"}`);
+    btnConnect.disabled = true;
+    btnDisconnect.disabled = false;
+    btnClear.disabled = false;
+    btnSave.disabled = false;
+
+    requestAnimationFrame(draw);
+  }
+
   async function disconnect(){
-    try{
-      if (voltageChar){
-        try{ await voltageChar.stopNotifications(); }catch(_e){}
-      }
-      if (diagChar){
-        try{ await diagChar.stopNotifications(); }catch(_e){}
-      }
-    }catch(_e){}
-    try{
-      if (device && device.gatt.connected) device.gatt.disconnect();
-    }catch(_e){}
-    device = null; server = null; voltageChar = null; diagChar = null;
+    try{ if (voltageChar) { try{ await voltageChar.stopNotifications(); }catch(_e){} } }catch(_e){}
+    try{ if (diagChar)    { try{ await diagChar.stopNotifications(); }catch(_e){} } }catch(_e){}
+    try{ if (device && device.gatt.connected) device.gatt.disconnect(); }catch(_e){}
+
+    device = null; server = null; service = null; voltageChar = null; diagChar = null;
     onDisconnected();
   }
 
   function clearData(){
-    rxBuf = new Uint8Array(0);
-    tAll.length = 0; vAll.length = 0; pAll.length = 0;
-    baseline = null;
-    packetCount = 0;
-    lenHist.clear();
-    notifSizeEl.textContent = "--";
-    packetCountEl.textContent = "0";
-    rateHz.textContent = "0";
-    lastRateCheck = performance.now();
-    lastSampleCount = 0;
+    resetState();
   }
 
   // ====== Theme ======
@@ -726,15 +655,14 @@
       btnDisconnect.disabled = true;
     }
   });
-
   btnDisconnect.addEventListener("click", disconnect);
   btnClear.addEventListener("click", clearData);
   btnSave.addEventListener("click", downloadCSV);
 
-  // Initial status
+  // Initial
   setStatus("bad", "Disconnected");
 
-  // Keep plots responsive
+  // Responsive
   window.addEventListener("resize", () => {
     resizeCanvasToDisplaySize(canvasRaw);
     resizeCanvasToDisplaySize(canvasProc);
